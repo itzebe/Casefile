@@ -1,6 +1,161 @@
-# Chat — Agent Guide
+# CASEFILE — Agent Guide
 
-Chat is the minimal chat-first agent-native app. `/` redirects to shared sign-in, then `/home`, the editable Get started page. Chat lives at `/chat`; new chats start there. Actions carry capabilities; screens exist only for durable workflows.
+CASEFILE is an agent-native case workspace. A user opens a case, the agent helps
+assemble it, and every claim in the finished file resolves to a piece of
+evidence that was actually observed. The product exists to make an
+evidence-backed record cheap to build and hard to fake.
+
+This file is the contract for anyone — human or agent — working in this repo.
+`README.md` and `DESIGN.md` describe the app that exists today; this file
+describes what CASEFILE must become and the rules that never bend.
+
+## 1. Product vision
+
+A case is a question that needs a defensible answer: an incident, a dispute, a
+due-diligence review, a research question. Today that work is a folder of
+screenshots, a spreadsheet, and a memory. CASEFILE replaces the folder.
+
+The core loop:
+
+1. The user states the case and its acceptance criteria in chat.
+2. The agent gathers evidence through actions — files, records, connected
+   sources, screenshots of what the user can see — and records each item with
+   its origin.
+3. The agent proposes findings. A finding is only ever a claim plus the exact
+   evidence identifiers that support it.
+4. The user reviews, challenges, and resolves. The case file exports with its
+   provenance intact.
+
+Non-goals: CASEFILE is not a chatbot with a document tab, and not a
+general-purpose note app. If a feature does not make an evidence-backed record
+faster to build or harder to fake, it is out of scope.
+
+Success is a stranger reading an exported case file and being able to re-derive
+every conclusion from the evidence attached to it, without trusting the agent.
+
+## 2. Agent-Native architecture requirements
+
+Agent-Native is the framework and execution platform. AgentKit is the
+interaction layer. Toolkit supplies the composer and workspace UI. Do not
+substitute another agent framework, and do not build a generic chatbot.
+
+- **Actions are the API.** All app capability lives in `actions/*.ts` as
+  `defineAction` operations with zod schemas. The UI and the agent call the
+  same action; there is no separate agent-only or UI-only path. Keep actions
+  deterministic and narrowly scoped.
+- **Normal app data flows through actions.** Do not reach around the action
+  surface to mutate domain state from a component.
+- **Screens exist for durable workflows.** Add a route only when a workflow
+  needs a persistent surface; everything else is chat plus action widgets.
+- **Chat is the primary surface.** The `/` route is the AgentKit canvas. Pass
+  route controls through its `toolbar` prop; use `slots`/`registry` for
+  presentation overrides instead of forking conversation state.
+- **Action UI is opt-in** per action through `chatUI.renderer`; register app
+  renderers with `registerActionChatRenderer()` using the same renderer id the
+  action declares.
+- **Persistence is SQL-backed** (PGlite in dev), with SSE for live sync. Keep
+  structured state in SQL, large artifacts in configured storage, and persist
+  references only.
+- **Use the workspace's local docs.** `pnpm action docs-search --query "<topic>"`
+  and `pnpm action source-search --query "<pattern>"` answer framework
+  questions from the installed version. Prefer them over web research.
+- Read `.agents/skills/build-an-app/SKILL.md` before adding a domain workflow
+  and `.agents/skills/adding-a-feature/SKILL.md` for a cross-area change.
+
+## 3. Design Constitution
+
+These rules are binding on every UI change. A change that violates one is
+rejected even if it looks better in isolation.
+
+1. **Evidence is always visible.** Any claim the agent surfaces renders with a
+   way to reach the evidence behind it. Never present an unsourced conclusion.
+2. **State the uncertainty, do not smooth it over.** Missing, ambiguous, or
+   contradictory evidence is shown as such. Do not fill a gap with a plausible
+   guess or an empty state that implies completeness.
+3. **Deterministic before intelligent.** A value that can be computed from
+   evidence is computed, not asked of a model. Models propose; they do not
+   decide what is true.
+4. **One action, one responsibility.** If an action needs "and" to describe it,
+   split it.
+5. **Feedback within 100 ms, never past 400 ms.** Acknowledge before network
+   work. Never leave a click unanswered.
+6. **Quiet chrome, loud content.** Follow the existing direction: borderless
+   lists, soft selected rows, restrained labels, semantic tokens. Do not
+   introduce a competing accent, floating chips, or duplicated navigation.
+7. **Compose the scaffold.** Reuse the shared component seams and the
+   AgentKit/Toolkit primitives. Compare sibling surfaces before inventing a new
+   pattern.
+8. **No placeholder destinations.** Do not ship a link or control the app does
+   not implement.
+9. **Accessibility is not a pass.** Every interactive control is keyboard
+   reachable and named; color is never the only signal.
+10. **The case file outlives the session.** Anything a user would expect to
+    find later is persisted, not held in component state.
+
+## 4. Security and privacy boundaries
+
+- **Secrets never enter the repo.** No credentials, tokens, API keys, or
+  customer data in source, fixtures, tests, logs, or commit history.
+  `BETTER_AUTH_SECRET` and `SECRETS_ENCRYPTION_KEY` stay in the environment
+  (`.env`, gitignored); `.env.example` documents keys with placeholder values
+  only. Read `.agents/skills/secrets/SKILL.md` before handling any credential.
+- **Auth is on by default.** `AUTH_DISABLED=true` is for local dev and preview
+  only and must never be set in a production deploy. Standalone production
+  needs a stable `BETTER_AUTH_SECRET`.
+- **Least privilege for integrations.** Reuse the workspace's scoped connection
+  resolver. Never hardcode a webhook URL, provider endpoint, or credential.
+- **Evidence may be sensitive.** Treat stored evidence as private to the case
+  owner. Do not surface it across cases, users, or workspaces, and do not send
+  it to a third party without an explicit, per-action reason.
+- **Validate at the boundary.** Every action validates its input with a zod
+  schema. Never trust a client-supplied identifier to authorize an operation —
+  resolve access from the server side.
+- **Never expose secrets in errors.** Fail loudly to the log, quietly to the
+  user.
+- **No paid services or infrastructure.** Local and free tiers only. Do not
+  introduce a service that needs a credit card to develop or verify.
+
+## 5. Implementation constraints
+
+- **Scaffold shape is fixed.** This is a standalone Agent-Native app created
+  from the official `chat` template. Keep the framework wiring intact.
+- **New project.** Do not copy code, config, or data from other repositories.
+  CASEFILE is original work for the Builder.io Agent-Native Hackathon 2026.
+- **Keep names stable.** Action names and their schemas are a public contract
+  the agent depends on. Renaming an action is a breaking change.
+- **Small, reviewable changes.** Prefer the smallest edit that satisfies the
+  requirement. Do not refactor adjacent code in the same change.
+- **Typecheck is the floor.** `pnpm typecheck` must pass before a change is
+  considered done.
+- **Local model note.** This workspace runs a local Ollama. A cold model needs
+  ~200-300s to prefill the ~15k-token system prompt, which exceeds Node's
+  default 300s `headersTimeout`. Run the dev server with
+  `NODE_OPTIONS="--import ./scripts/dev-ollama-timeout.mjs"` so a slow first
+  token is not mistaken for a dead provider. This is a local-dev workaround,
+  not a production setting.
+- **Do not deploy** without an explicit instruction to deploy.
+
+## 6. Testing and verification
+
+- **Verify, do not assume.** Every claim that something works is backed by a
+  command, a response, or a screenshot from this environment. "It should work"
+  is not a result.
+- **Verify the real path.** Exercise the actual action and the actual route. Do
+  not substitute a mock for the code under test.
+- **Prove both callers.** A new or changed action is verified from the UI
+  (its HTTP route) **and** from the agent (the tool call in chat). The two
+  paths are the product's promise; one without the other is unverified.
+- **Test the failure mode.** For each new invariant, confirm it can fail —
+  mutate the guard and watch the test go red. A check that cannot fail is a
+  defect.
+- **Run the checks that exist.** `pnpm typecheck`, `pnpm test`
+  (vitest), and `pnpm agent-native:doctor`. Fix findings before declaring done.
+- **Record the evidence.** When a run or verification completes, capture the
+  concrete artifact — the response body, the run status, the screenshot — so
+  the result is inspectable after the fact.
+- **No success without evidence.** If something is blocked, report it as
+  blocked with the exact error and the attempted fix, rather than reporting
+  success.
 
 ## Skills
 
