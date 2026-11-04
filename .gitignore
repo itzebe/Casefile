@@ -41,3 +41,6 @@ learnings.md
 .vercel/
 .agent-native/
 data/*.lock
+
+# Agent working memory (local knowledge, not product code)
+.openhands/
