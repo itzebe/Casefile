@@ -15,6 +15,7 @@ import { openCommandMenu } from "@agent-native/toolkit/app/shared";
 import { AgentNativeIcon } from "@agent-native/toolkit/app/shared/AgentNativeIcon";
 import {
   IconEdit,
+  IconFolderSearch,
   IconHome,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
@@ -32,6 +33,7 @@ import {
 } from "@/components/ui/tooltip";
 import { APP_TITLE } from "@/lib/app-config";
 import { chatThreadPath, HOME_PATH, threadIdFromPath } from "@/lib/chat-paths";
+import { CASES_PATH } from "@/lib/casefile-paths";
 import { cn } from "@/lib/utils";
 
 const CHAT_STORAGE_KEY = "chat";
@@ -146,6 +148,39 @@ function HomeNavLink({ collapsed }: { collapsed: boolean }) {
       <Tooltip>
         <TooltipTrigger asChild>{link}</TooltipTrigger>
         <TooltipContent side="right">{t("navigation.home")}</TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return <div className="px-2">{link}</div>;
+}
+
+function CasesNavLink({ collapsed }: { collapsed: boolean }) {
+  const location = useLocation();
+  const active = location.pathname.startsWith(CASES_PATH);
+  const link = (
+    <Link
+      to={CASES_PATH}
+      aria-current={active ? "page" : undefined}
+      aria-label={collapsed ? "Cases" : undefined}
+      className={cn(
+        "flex items-center text-sidebar-accent-foreground transition-colors hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring",
+        active && "bg-sidebar-accent",
+        collapsed
+          ? "size-8 justify-center rounded-md"
+          : "h-8 w-full gap-3 rounded-lg px-3 text-sm font-medium",
+      )}
+    >
+      <IconFolderSearch className="size-4 shrink-0" strokeWidth={1.8} />
+      <span className={collapsed ? "sr-only" : "truncate"}>Cases</span>
+    </Link>
+  );
+
+  if (collapsed) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{link}</TooltipTrigger>
+        <TooltipContent side="right">Cases</TooltipContent>
       </Tooltip>
     );
   }
@@ -408,6 +443,7 @@ export function Sidebar({
         )}
       >
         <HomeNavLink collapsed={collapsed} />
+        <CasesNavLink collapsed={collapsed} />
         <ChatThreadsSection collapsed={collapsed} />
       </nav>
 
