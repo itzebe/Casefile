@@ -221,6 +221,49 @@ describe("cross-document claim comparison", () => {
     await setupTestDatabase();
   });
 
+  it("reads back the stored graph without rebuilding it", async () => {
+    const caseId = await seedTwoDocuments(STATEMENT_MATCHING);
+    const built = await callAction<{
+      relationships: Array<{ id: string; relationType: string; reviewStatus: string }>;
+    }>("build-case-graph", { caseId }, userContext(OWNER));
+
+    // A reviewer confirms one edge, then the page is reloaded.
+    const confirmed = built.relationships.find((r) => r.relationType === "same_identifier")!;
+    await callAction(
+      "update-relationship",
+      { caseId, relationshipId: confirmed.id, reviewStatus: "confirmed" },
+      userContext(OWNER),
+    );
+
+    const read = await callAction<{
+      counts: { relationships: number };
+      relationships: Array<{ id: string; reviewStatus: string }>;
+      comparisons: unknown[];
+    }>("read-case-graph", { caseId }, userContext(OWNER));
+
+    // The read returns the stored rows, so the id a reviewer needs to act on and
+    // their earlier decision both survive a reload instead of resetting to
+    // freshly computed proposals.
+    expect(read.counts.relationships).toBe(built.relationships.length);
+    const reread = read.relationships.find((r) => r.id === confirmed.id);
+    expect(reread?.reviewStatus).toBe("confirmed");
+  });
+
+  it("leaves the stored relationships untouched when read", async () => {
+    const caseId = await seedTwoDocuments(STATEMENT_MATCHING);
+    const { getDb, schema } = await import("./helpers/harness.js");
+    await callAction("build-case-graph", { caseId }, userContext(OWNER));
+    const before = await getDb().select().from(schema.relationships);
+    expect(before.length).toBeGreaterThan(0);
+
+    await callAction("read-case-graph", { caseId }, userContext(OWNER));
+
+    const after = await getDb().select().from(schema.relationships);
+    // Reading a graph is a query, never a write: the panel hydrates from it on
+    // every page load, so it must not mint new proposal rows each time.
+    expect(after.map((r) => r.id).sort()).toEqual(before.map((r) => r.id).sort());
+  });
+
   it("reports direct agreement when two documents name the same reference", async () => {
     const caseId = await seedTwoDocuments(STATEMENT_MATCHING);
     const { getDb, schema } = await import("./helpers/harness.js");

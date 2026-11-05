@@ -448,12 +448,14 @@ const VERDICT_STYLE: Record<string, string> = {
  */
 function CrossDocumentPanel({
   graph,
+  loading,
   onBuild,
   building,
   onReviewRelationship,
   onSelectEvidence,
 }: {
   graph: GraphResult | null;
+  loading?: boolean;
   onBuild: () => void;
   building: boolean;
   onReviewRelationship: (relationshipId: string, reviewStatus: "confirmed" | "rejected") => void;
@@ -489,7 +491,9 @@ function CrossDocumentPanel({
       {!graph ? (
         <Card>
           <CardContent className="pt-6 text-sm text-muted-foreground">
-            Run the connection to compare this case&apos;s documents against each other.
+            {loading
+              ? "Reading the stored connections…"
+              : "Run the connection to compare this case&apos;s documents against each other."}
           </CardContent>
         </Card>
       ) : (
@@ -948,6 +952,7 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
   );
 
   const [graph, setGraph] = useState<GraphResult | null>(null);
+  const storedGraph = useActionQuery<GraphResult>("read-case-graph", { caseId });
   const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null);
   const [selectedPassageId, setSelectedPassageId] = useState<string | null>(null);
   const passageView = useActionQuery<{
@@ -963,11 +968,15 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
     void detail.refetch();
     void status.refetch();
     void timeline.refetch();
+    void storedGraph.refetch();
   };
 
   const buildGraph = useActionMutation("build-case-graph", {
     onSuccess: (result: GraphResult) => {
       setGraph(result);
+      // The stored rows carry the ids a reviewer needs to confirm or dismiss an
+      // edge, so pull them back rather than trusting the freshly computed ones.
+      void storedGraph.refetch();
       setNotice(
         `Connected ${result.counts.documents} document(s): ${result.counts.relationships} relationship(s), ` +
           `${result.counts.contradictions} contradiction(s), ${result.counts.gaps} gap(s).`,
@@ -1263,7 +1272,8 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
       </section>
 
       <CrossDocumentPanel
-        graph={graph}
+        graph={graph ?? storedGraph.data ?? null}
+        loading={storedGraph.isLoading}
         building={buildGraph.isPending}
         onBuild={() => buildGraph.mutate({ caseId, persist: true })}
         onReviewRelationship={(relationshipId, reviewStatus) =>

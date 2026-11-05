@@ -58,6 +58,13 @@ describe("cross-document panel wiring", () => {
     expect(workspaceSource).toContain('data-testid="passage-viewer"');
   });
 
+  it("hydrates the panel from the stored graph on load", () => {
+    // Without this query the panel renders empty on every reload even though the
+    // relationships and a reviewer's decisions are in the database.
+    expect(workspaceSource).toContain('useActionQuery<GraphResult>("read-case-graph"');
+    expect(workspaceSource).toContain("storedGraph.data");
+  });
+
   it("reports a contradiction with the shared reference it matched on", () => {
     // A reviewer must be able to check the link, not just read the verdict, so
     // the panel prints the shared reference next to the conflicting assertions.
