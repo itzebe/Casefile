@@ -1,11 +1,16 @@
 import { useActionMutation, useActionQuery } from "@agent-native/core/client/use-action";
-import { useRef, useState } from "react";
-import { Link } from "react-router";
+import {
+  markAgentChatHomeHandoff,
+  navigateWithAgentChatViewTransition,
+} from "@agent-native/core/client/agent-chat";
+import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router";
 
 import type {
   CaseStatus,
   EvidenceCategory,
   DocumentType,
+  Provenance,
 } from "@shared/casefile/types";
 import { DOCUMENT_TYPES, DOCUMENT_TYPE_LABELS, label } from "@shared/casefile/types";
 
@@ -15,6 +20,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CASES_PATH } from "@/lib/casefile-paths";
+import { getChatHomeThreadId } from "@/lib/chat-home-thread";
+import { chatThreadPath } from "@/lib/chat-paths";
 import { cn } from "@/lib/utils";
 
 /**
@@ -138,6 +145,20 @@ interface GraphResult {
   gaps: Gap[];
 }
 
+interface ReadinessState {
+  state: string;
+  label: string;
+  rationale: string;
+  established: string[];
+  unverified: string[];
+  contradicted: string[];
+  missing: string[];
+  needsReview: string[];
+  additionalEvidence: string[];
+  nextStep: string;
+  readyForReport: boolean;
+}
+
 interface CaseDetail {
   case: {
     id: string;
@@ -178,6 +199,190 @@ function humanBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/**
+ * The provenance and review key, shown once at the top of the workspace.
+ *
+ * The whole product rests on a reader being able to tell a documented fact from
+ * a party's assertion, an agent's inference, an unverified statement, and a
+ * contradiction. Those words are the app's vocabulary, so they are defined here
+ * rather than left for the reader to infer from colour.
+ */
+function ProvenanceLegend() {
+  const rows: Array<{ provenance: Provenance; meaning: string }> = [
+    { provenance: "documented", meaning: "read directly from a document in the case" },
+    { provenance: "asserted", meaning: "a party's own statement, reported as a statement" },
+    { provenance: "inferred", meaning: "the agent's reasoning, not something a document says" },
+    { provenance: "unverified", meaning: "no supporting passage is attached yet" },
+  ];
+  return (
+    <details className="group rounded-lg border border-border p-3" data-testid="provenance-legend">
+      <summary className="cursor-pointer text-sm font-medium marker:content-none">
+        How to read this file
+        <span className="ms-2 text-xs font-normal text-muted-foreground">
+          what each label means
+        </span>
+      </summary>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        {rows.map((row) => (
+          <div key={row.provenance} className="flex items-start gap-2">
+            <ProvenanceBadge value={row.provenance} />
+            <span className="text-xs text-muted-foreground">{row.meaning}</span>
+          </div>
+        ))}
+        <div className="flex items-start gap-2">
+          <span className="inline-flex shrink-0 items-center rounded-full border border-destructive/50 bg-destructive/5 px-2 py-0.5 text-xs font-medium">
+            Contradiction
+          </span>
+          <span className="text-xs text-muted-foreground">
+            two documents disagree on the same identifier
+          </span>
+        </div>
+        <div className="flex items-start gap-2">
+          <span className="inline-flex shrink-0 items-center rounded-full border border-dashed border-border px-2 py-0.5 text-xs font-medium">
+            Unresolved
+          </span>
+          <span className="text-xs text-muted-foreground">
+            the record is missing something it needs
+          </span>
+        </div>
+      </div>
+      <p className="mt-3 text-xs text-muted-foreground">
+        Analysis proposes; a person confirms. Nothing is ever shown as established until a
+        reviewer has accepted it.
+      </p>
+    </details>
+  );
+}
+
+/**
+ * The investigation brief.
+ *
+ * The first thing a reader sees: which investigation this is, what the evidence
+ * has been found to establish, what still needs a person, where the record
+ * conflicts, and what it cannot yet answer. Every count is derived from the
+ * stored record — never from a model and never invented for the screen.
+ */
+function InvestigationBrief({
+  caseTitle,
+  amount,
+  investigation,
+  graph,
+  reviewCount,
+  onJump,
+}: {
+  caseTitle: string;
+  amount: string | null;
+  investigation: InvestigationStatus | undefined;
+  graph: GraphResult | null;
+  reviewCount: number;
+  onJump: (anchor: string) => void;
+}) {
+  const contradictions = graph?.counts.contradictions ?? 0;
+  const gaps = graph?.counts.gaps ?? 0;
+  const established = investigation
+    ? investigation.claims.confirmed + investigation.events.confirmed
+    : 0;
+  const proposed = investigation
+    ? investigation.claims.proposed + investigation.events.proposed
+    : 0;
+  const files = investigation?.evidence.total ?? 0;
+  const notRead = investigation?.evidence.pending ?? 0;
+
+  const headline = ((): string => {
+    if (files === 0) return "No evidence has been added yet.";
+    if (notRead > 0 && established === 0 && proposed === 0) {
+      return "Evidence has been added but not yet read.";
+    }
+    if (established === 0 && proposed > 0) {
+      return "Findings have been proposed and are waiting for your review.";
+    }
+    if (established > 0 && contradictions > 0) {
+      return "The case is partly established, with conflicts that still need a decision.";
+    }
+    if (established > 0) return "The case has findings a person has confirmed.";
+    return "The evidence has been read and is ready to analyse.";
+  })();
+
+  const items: Array<{
+    label: string;
+    value: string;
+    tone?: string | undefined;
+    anchor?: string | undefined;
+  }> = [
+    { label: "Evidence received", value: `${files} file${files === 1 ? "" : "s"}`, anchor: "evidence" },
+    {
+      label: "Established",
+      value: `${established} confirmed`,
+      tone: established > 0 ? "text-emerald-700 dark:text-emerald-300" : undefined,
+      anchor: "claims",
+    },
+    {
+      label: "Needs your review",
+      value: `${reviewCount} proposed`,
+      tone: reviewCount > 0 ? "text-sky-700 dark:text-sky-300" : undefined,
+      anchor: "review",
+    },
+    {
+      label: "Contradictions",
+      value: `${contradictions}`,
+      tone: contradictions > 0 ? "text-destructive" : undefined,
+      anchor: "across-documents",
+    },
+    {
+      label: "Unresolved",
+      value: `${gaps} question${gaps === 1 ? "" : "s"}`,
+      tone: gaps > 0 ? "text-amber-700 dark:text-amber-300" : undefined,
+      anchor: "across-documents",
+    },
+  ];
+
+  return (
+    <section
+      className="mb-6 rounded-xl border border-border bg-muted/30 p-4 sm:p-5"
+      data-testid="investigation-brief"
+      aria-label="Investigation brief"
+    >
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <h2 className="text-base font-semibold">Investigation brief</h2>
+        {amount ? (
+          <span className="text-sm font-medium tabular-nums" data-testid="brief-amount">
+            {amount}
+          </span>
+        ) : null}
+      </div>
+      <p className="mt-1 text-sm text-muted-foreground" data-testid="brief-headline">
+        {headline}
+      </p>
+      <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-5">
+        {items.map((item) => (
+          <div key={item.label}>
+            <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">
+              {item.label}
+            </dt>
+            <dd className={cn("text-lg font-semibold tabular-nums", item.tone)}>
+              {item.anchor ? (
+                <button
+                  type="button"
+                  className="rounded underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => onJump(item.anchor!)}
+                >
+                  {item.value}
+                </button>
+              ) : (
+                item.value
+              )}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-3 text-xs text-muted-foreground">
+        {caseTitle ? `${caseTitle}. ` : ""}Counts are read from the stored record, not from a
+        model.
+      </p>
+    </section>
+  );
 }
 
 function fileToBase64(file: File): Promise<string> {
@@ -309,11 +514,13 @@ function FindingCard({
   evidenceById,
   onReview,
   onCorrectDate,
+  onSelectEvidence,
 }: {
   finding: Claim | EventItem;
   evidenceById: Map<string, EvidenceItem>;
   onReview: (findingId: string, reviewStatus: "confirmed" | "rejected") => void;
   onCorrectDate: (findingId: string, date: string) => void;
+  onSelectEvidence: (evidenceId: string, passageId: string | null) => void;
 }) {
   const [editingDate, setEditingDate] = useState(false);
   const [dateValue, setDateValue] = useState("");
@@ -323,8 +530,10 @@ function FindingCard({
 
   return (
     <div
+      id={`finding-${finding.id}`}
+      tabIndex={-1}
       className={cn(
-        "rounded-lg border p-3",
+        "rounded-lg border p-3 scroll-mt-4",
         unsupported ? "border-amber-600/40 bg-amber-500/5" : "border-border",
       )}
     >
@@ -371,9 +580,14 @@ function FindingCard({
               className="border-s-2 border-border ps-3 text-xs text-muted-foreground"
             >
               {citation.quote ? `“${citation.quote}”` : "Quoted passage"}
-              <span className="ms-1 opacity-80">
+              <button
+                type="button"
+                className="ms-1 underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => onSelectEvidence(citation.evidenceId, citation.passageId)}
+                title="Open the source document at this passage"
+              >
                 — {evidenceById.get(citation.evidenceId)?.filename ?? "a source document"}
-              </span>
+              </button>
             </blockquote>
           ))
         )}
@@ -474,7 +688,7 @@ function CrossDocumentPanel({
   );
 
   return (
-    <section className="mb-6" data-testid="cross-document-panel">
+    <section className="mb-6" data-testid="cross-document-panel" id="across-documents" tabIndex={-1}>
       <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-lg font-medium">Across documents</h2>
@@ -938,6 +1152,7 @@ function ReportPanel({ caseId }: { caseId: string }) {
 }
 
 export function CaseWorkspace({ caseId }: { caseId: string }) {
+  const navigate = useNavigate();
   const fileInput = useRef<HTMLInputElement>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -955,6 +1170,7 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
   const storedGraph = useActionQuery<GraphResult>("read-case-graph", { caseId });
   const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null);
   const [selectedPassageId, setSelectedPassageId] = useState<string | null>(null);
+  const selectedPassageRef = useRef<HTMLQuoteElement | null>(null);
   const passageView = useActionQuery<{
     evidence: { id: string; filename: string; extractionStatus: string };
     passages: Array<{ id: string; ref: string; text: string; locatorType: string; locatorValue: number | null }>;
@@ -963,6 +1179,14 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
     { caseId, evidenceId: selectedEvidenceId ?? "", includeBytes: false },
     { enabled: Boolean(selectedEvidenceId) },
   );
+
+  // When a citation is opened, bring the passage the finding actually rests on
+  // into view. Without this the viewer opens at the top and the reviewer has to
+  // hunt for the quoted line.
+  useEffect(() => {
+    if (!selectedPassageId || !selectedPassageRef.current) return;
+    selectedPassageRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [selectedPassageId, passageView.data]);
 
   const invalidate = () => {
     void detail.refetch();
@@ -1109,6 +1333,36 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
   const evidenceById = new Map(data.evidence.map((item) => [item.id, item]));
   const investigation = status.data;
   const blockers = investigation?.blockers ?? [];
+  const reviewCount = investigation
+    ? investigation.claims.proposed + investigation.events.proposed
+    : 0;
+  const amount =
+    data.case.amountMinor !== null
+      ? `${(data.case.amountMinor / 100).toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}${data.case.currency ? ` ${data.case.currency}` : ""}`
+      : null;
+  const jumpTo = (anchor: string) => {
+    const target = document.getElementById(anchor);
+    if (!target) return;
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    target.focus?.();
+  };
+  /**
+   * Opens the agent with this case already named in the prompt, so the reader
+   * does not have to paste an id. The agent still reads the case through its
+   * own actions; this only seeds the request.
+   */
+  const askAgentAboutCase = () => {
+    const threadId = getChatHomeThreadId();
+    const message = `Read case ${caseId} and summarise what the evidence establishes, what is still proposed, and what is unresolved. Cite the documents you rely on.`;
+    markAgentChatHomeHandoff("chat");
+    navigateWithAgentChatViewTransition(navigate, chatThreadPath(threadId), {
+      state: { initialMessage: message },
+    });
+  };
+  const graphForBrief = graph ?? storedGraph.data ?? null;
 
   return (
     <div className="mx-auto w-full max-w-4xl px-4 py-8">
@@ -1135,8 +1389,30 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
               {value === "review" ? "In review" : value}
             </Button>
           ))}
+          <Button
+            size="sm"
+            variant="secondary"
+            className="ms-auto"
+            onClick={askAgentAboutCase}
+            data-testid="ask-agent-about-case"
+          >
+            Ask the agent about this case
+          </Button>
         </div>
       </header>
+
+      <InvestigationBrief
+        caseTitle={data.case.title}
+        amount={amount}
+        investigation={investigation}
+        graph={graphForBrief}
+        reviewCount={reviewCount}
+        onJump={jumpTo}
+      />
+
+      <div className="mb-6">
+        <ProvenanceLegend />
+      </div>
 
       {notice ? (
         <p className="mb-4 rounded-md border border-emerald-600/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-900 dark:text-emerald-200">
@@ -1189,7 +1465,7 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
         </Card>
       ) : null}
 
-      <section className="mb-6">
+      <section className="mb-6" id="evidence" tabIndex={-1}>
         <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="text-lg font-medium">Evidence</h2>
@@ -1292,7 +1568,12 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
       <ReportPanel caseId={caseId} />
 
       {selectedEvidenceId ? (
-        <section className="mb-6" data-testid="passage-viewer">
+        <section
+          className="mb-6 scroll-mt-4"
+          data-testid="passage-viewer"
+          id="passage-viewer"
+          tabIndex={-1}
+        >
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-medium">
               {passageView.data?.evidence.filename ?? "Source document"}
@@ -1309,8 +1590,42 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
             </Button>
           </div>
           <p className="mb-3 text-sm text-muted-foreground">
-            The passages a finding or relationship cites, with their exact locators.
+            The extracted text of this document, with the exact locator for each passage. The
+            original file is not altered or re-rendered.
           </p>
+
+          {(() => {
+            const allFindings = [...data.claims, ...data.events];
+            const users = allFindings.filter((finding) =>
+              finding.citations.some((citation) => citation.evidenceId === selectedEvidenceId),
+            );
+            if (users.length === 0) return null;
+            return (
+              <div
+                className="mb-3 rounded-lg border border-border bg-muted/30 p-3"
+                data-testid="passage-viewer-findings"
+              >
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Used by {users.length} finding{users.length === 1 ? "" : "s"}
+                </p>
+                <ul className="mt-2 space-y-1">
+                  {users.map((finding) => (
+                    <li key={finding.id} className="flex items-start gap-2 text-sm">
+                      <ProvenanceBadge value={finding.provenance} />
+                      <button
+                        type="button"
+                        className="text-start underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        onClick={() => jumpTo(`finding-${finding.id}`)}
+                      >
+                        {finding.statement}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })()}
+
           <div className="space-y-2">
             {passageView.isPending ? (
               <p className="text-sm text-muted-foreground">Loading passages…</p>
@@ -1322,10 +1637,12 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
               passageView.data?.passages.map((passage) => (
                 <blockquote
                   key={passage.id}
+                  id={`passage-${passage.id}`}
+                  ref={passage.id === selectedPassageId ? selectedPassageRef : undefined}
                   className={cn(
-                    "rounded-md border p-3 text-sm",
+                    "rounded-md border p-3 text-sm scroll-mt-4",
                     passage.id === selectedPassageId
-                      ? "border-primary bg-primary/5"
+                      ? "border-primary bg-primary/5 ring-1 ring-primary/40"
                       : "border-border",
                   )}
                 >
@@ -1374,7 +1691,7 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
         </div>
       </section>
 
-      <section className="mb-6">
+      <section className="mb-6" id="claims" tabIndex={-1}>
         <h2 className="text-lg font-medium">Claims</h2>
         <p className="text-sm text-muted-foreground">
           Every claim shows where it came from and whether a person has accepted it.
@@ -1401,13 +1718,17 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
                     datePrecision: "day",
                   })
                 }
+                onSelectEvidence={(evidenceId, passageId) => {
+                  setSelectedEvidenceId(evidenceId);
+                  setSelectedPassageId(passageId);
+                }}
               />
             ))
           )}
         </div>
       </section>
 
-      <section>
+      <section id="events" tabIndex={-1}>
         <h2 className="text-lg font-medium">Events</h2>
         <div className="mt-3 space-y-2">
           {data.events.length === 0 ? (
@@ -1429,6 +1750,10 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
                     datePrecision: "day",
                   })
                 }
+                onSelectEvidence={(evidenceId, passageId) => {
+                  setSelectedEvidenceId(evidenceId);
+                  setSelectedPassageId(passageId);
+                }}
               />
             ))
           )}

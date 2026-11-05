@@ -10,26 +10,18 @@ import { CoreComposerRuntimeProvider } from "@agent-native/toolkit/app/chat/agen
 import { CoreAgentKitRoot } from "@agent-native/toolkit/app/chat/agentkit-chat/index";
 import { useRealtimeVoiceModeOptional } from "@agent-native/toolkit/app/chat/composer";
 import { WaveBackground } from "@agent-native/toolkit/app/shared";
-import { AgentNativeIcon } from "@agent-native/toolkit/app/shared/AgentNativeIcon";
 import {
-  IconBook,
-  IconBrandDiscord,
-  IconBrandGithub,
-  IconUsers,
+  IconFileText,
+  IconGitCompare,
+  IconHelpCircle,
+  IconUserCheck,
 } from "@tabler/icons-react";
 import { useState, type ReactNode } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 
 import { Button } from "@/components/ui/button";
-import {
-  Item,
-  ItemContent,
-  ItemFooter,
-  ItemMedia,
-  ItemTitle,
-} from "@/components/ui/item";
-import { Separator } from "@/components/ui/separator";
 import { getChatHomeThreadId } from "@/lib/chat-home-thread";
+import { CASES_PATH } from "@/lib/casefile-paths";
 import {
   chatHandoffComposerOptions,
   chatThreadPath,
@@ -37,10 +29,6 @@ import {
   type ChatRouteState,
 } from "@/lib/chat-paths";
 import { TAB_ID } from "@/lib/tab-id";
-
-const DOCS_URL = "https://www.agent-native.com/docs";
-const GITHUB_URL = "https://github.com/BuilderIO/agent-native";
-const DISCORD_URL = "https://discord.gg/qm82StQ2NC";
 
 /**
  * The same AgentKit composer the chat page uses, so Connect AI and the model
@@ -154,46 +142,50 @@ function HomeAgentComposerInput({
   );
 }
 
-function ResourceLink({
-  href,
-  icon,
-  children,
-}: {
-  href: string;
-  icon?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <Button asChild variant="outline" size="sm">
-      <a href={href} target="_blank" rel="noreferrer">
-        {icon}
-        {children}
-      </a>
-    </Button>
-  );
-}
+/**
+ * A short statement of what the product actually does, shown on the landing
+ * surface. Each step is the real workflow, not a marketing claim.
+ */
+const HOW_IT_WORKS: Array<{ icon: ReactNode; title: string; body: string }> = [
+  {
+    icon: <IconFileText />,
+    title: "Add the evidence",
+    body: "Drop in receipts, order confirmations, bank statements, and the messages exchanged with the other side.",
+  },
+  {
+    icon: <IconGitCompare />,
+    title: "Reconstruct what happened",
+    body: "CASEFILE reads each document, links them by their shared identifiers, and shows where they agree or conflict.",
+  },
+  {
+    icon: <IconHelpCircle />,
+    title: "See what is still unknown",
+    body: "Missing facts and unresolved questions are shown as such, never smoothed over with a plausible guess.",
+  },
+  {
+    icon: <IconUserCheck />,
+    title: "You confirm what is established",
+    body: "Analysis proposes. Nothing is recorded as a fact until a person reviews and confirms it.",
+  },
+];
 
-function ResourceColumn({
+function StepCard({
   icon,
   title,
-  children,
+  body,
 }: {
   icon: ReactNode;
   title: string;
-  children: ReactNode;
+  body: string;
 }) {
   return (
-    <Item asChild className="content-start px-6 py-8 sm:px-10">
-      <section>
-        <ItemMedia variant="icon">{icon}</ItemMedia>
-        <ItemContent>
-          <ItemTitle role="heading" aria-level={2}>
-            {title}
-          </ItemTitle>
-        </ItemContent>
-        <ItemFooter className="flex-wrap justify-start">{children}</ItemFooter>
-      </section>
-    </Item>
+    <div className="rounded-xl border border-border p-4">
+      <span className="text-muted-foreground" aria-hidden="true">
+        {icon}
+      </span>
+      <h3 className="mt-2 text-sm font-semibold">{title}</h3>
+      <p className="mt-1 text-sm text-muted-foreground">{body}</p>
+    </div>
   );
 }
 
@@ -202,47 +194,38 @@ export default function HomePage() {
 
   return (
     <div className="flex min-h-full flex-col">
-      <section className="relative isolate flex flex-1 flex-col items-center justify-center gap-6 overflow-hidden px-4 py-16 text-center">
+      <section className="relative isolate flex flex-col items-center gap-5 overflow-hidden px-4 pt-16 pb-10 text-center">
         <WaveBackground
           matchPageSurface
           className="pointer-events-none absolute inset-0 -z-10"
         />
-        <AgentNativeIcon
-          aria-hidden="true"
-          className="h-8 w-14 text-foreground"
-        />
-        <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
-          {t("home.title")}
+        <p className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
+          Casefile
+        </p>
+        <h1 className="max-w-2xl text-3xl font-semibold tracking-tight sm:text-4xl">
+          Evidence intelligence. Human-controlled investigations.
         </h1>
+        <p className="max-w-xl text-sm text-muted-foreground">
+          A casefile holds the documents for one dispute. CASEFILE reconstructs what happened,
+          shows what the evidence establishes, what conflicts, and what is still unknown — and
+          leaves every decision to you.
+        </p>
         <HomeAgentComposer />
+        <Button asChild variant="outline" size="sm">
+          <Link to={CASES_PATH}>Open the cases</Link>
+        </Button>
       </section>
 
-      <Separator />
-      <div className="grid md:grid-cols-[1fr_auto_1fr]">
-        <ResourceColumn icon={<IconBook />} title={t("home.docsTitle")}>
-          <ResourceLink href={`${DOCS_URL}/getting-started`}>
-            {t("home.docsGettingStarted")}
-          </ResourceLink>
-          <ResourceLink href={`${DOCS_URL}/getting-started-actions`}>
-            {t("home.docsAddAction")}
-          </ResourceLink>
-          <ResourceLink href={`${DOCS_URL}/getting-started-pages`}>
-            {t("home.docsAddPage")}
-          </ResourceLink>
-          <ResourceLink href={`${DOCS_URL}/key-concepts`}>
-            {t("home.docsKeyConcepts")}
-          </ResourceLink>
-        </ResourceColumn>
-        <Separator orientation="vertical" className="hidden md:block" />
-        <ResourceColumn icon={<IconUsers />} title={t("home.communityTitle")}>
-          <ResourceLink href={GITHUB_URL} icon={<IconBrandGithub />}>
-            GitHub
-          </ResourceLink>
-          <ResourceLink href={DISCORD_URL} icon={<IconBrandDiscord />}>
-            Discord
-          </ResourceLink>
-        </ResourceColumn>
-      </div>
+      <section className="mx-auto w-full max-w-4xl px-4 pb-16">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {HOW_IT_WORKS.map((step) => (
+            <StepCard key={step.title} icon={step.icon} title={step.title} body={step.body} />
+          ))}
+        </div>
+        <p className="mt-6 text-center text-xs text-muted-foreground">
+          Built on Agent-Native. Every statement resolves to the document it came from.
+        </p>
+      </section>
     </div>
   );
 }

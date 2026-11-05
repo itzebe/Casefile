@@ -122,3 +122,62 @@ describe("classification, readiness, and report wiring", () => {
     expect(workspaceSource).toContain("revokeObjectURL");
   });
 });
+
+describe("investigation brief and navigation wiring", () => {
+  it("renders the investigation brief and its provenance key", () => {
+    expect(workspaceSource).toContain('data-testid="investigation-brief"');
+    expect(workspaceSource).toContain('data-testid="provenance-legend"');
+    expect(workspaceSource).toContain("<InvestigationBrief");
+  });
+
+  it("derives the brief's counts from the stored record, not a model", () => {
+    // The brief is a deterministic summary: it reads the investigation status
+    // and the persisted graph, and never asks a model for a number.
+    expect(workspaceSource).toContain("investigation.claims.confirmed");
+    expect(workspaceSource).toContain("investigation.evidence.pending");
+    expect(workspaceSource).toContain("graph?.counts.contradictions");
+  });
+
+  it("lets a statement jump to the passage it rests on", () => {
+    // A finding's citation is a control that opens the source document at the
+    // quoted passage, so the reader can check the link rather than trust it.
+    expect(workspaceSource).toContain("onSelectEvidence");
+    expect(workspaceSource).toContain("onSelectEvidence(citation.evidenceId, citation.passageId)");
+  });
+
+  it("shows which findings use the open document", () => {
+    // The reverse direction: an open document lists the findings that cite it.
+    expect(workspaceSource).toContain('data-testid="passage-viewer-findings"');
+    expect(workspaceSource).toContain("Used by ");
+  });
+
+  it("brings the cited passage into view when a citation is opened", () => {
+    expect(workspaceSource).toContain("selectedPassageRef");
+    expect(workspaceSource).toContain("scrollIntoView");
+  });
+
+  it("offers a case-scoped entry into the agent", () => {
+    expect(workspaceSource).toContain('data-testid="ask-agent-about-case"');
+    expect(workspaceSource).toContain("markAgentChatHomeHandoff");
+    expect(workspaceSource).toContain("chatThreadPath");
+  });
+});
+
+describe("landing page is product-specific", () => {
+  const homeSource = readFileSync(
+    fileURLToPath(new URL("../app/components/home/HomePage.tsx", import.meta.url)),
+    "utf8",
+  );
+
+  it("does not ship the template's generic starter copy", () => {
+    expect(homeSource).not.toContain("Open Source");
+    expect(homeSource).not.toContain("home.docsAddAction");
+    expect(homeSource).not.toContain("home.communityTitle");
+  });
+
+  it("states the product's promise and links to the cases", () => {
+    expect(homeSource).toContain("Evidence intelligence");
+    expect(homeSource).toContain("CASES_PATH");
+    expect(homeSource).toContain("Analysis proposes");
+  });
+});
