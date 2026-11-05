@@ -109,10 +109,7 @@ function buildParagraphs(report: InvestigationReport): Paragraph[] {
   }
 
   push("6. Contradictions and competing accounts", "Heading1");
-  const contested = report.contradictions.filter(
-    (comparison) =>
-      comparison.verdict === "contradiction" || comparison.verdict === "potential_contradiction",
-  );
+  const contested = report.contradictions;
   if (contested.length === 0) push("No contradictions were identified between the documents.");
   for (const comparison of contested) {
     push(`${comparison.verdict.replace(/_/g, " ")} — ${comparison.reason}`, "ListParagraph");

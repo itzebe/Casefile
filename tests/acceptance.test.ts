@@ -131,6 +131,70 @@ describe("acceptance scenarios", () => {
         expect(report.reviewSummary.confirmed).toBe(0);
       });
 
+      it("reports only contested comparisons as contradictions", async () => {
+        const { caseId, evidenceIds } = await runScenario(scenario);
+        const { getDb, schema } = await import("./helpers/harness.js");
+        const db = getDb();
+        const passages = await db.select().from(schema.evidencePassages);
+        // Two claims that agree on the same identifier, and one that conflicts
+        // with a second claim on the amount. Analysis needs a model, so the
+        // findings are seeded directly; the comparisons under test are derived
+        // deterministically from what is stored.
+        const passageOf = (evidenceId: string) =>
+          passages.find((p) => p.evidenceId === evidenceId) ?? passages[0]!;
+        const rows = [
+          { id: "fnd_a", kind: "claim", statement: "The agreed price is 12,000.00 USD.", ev: evidenceIds[0]! },
+          { id: "fnd_b", kind: "claim", statement: "The agreed price is 12,000.00 USD.", ev: evidenceIds[1]! },
+          { id: "fnd_c", kind: "claim", statement: "The agreed price is 9,000.00 USD.", ev: evidenceIds[2] ?? evidenceIds[1]! },
+        ];
+        for (const row of rows) {
+          const passage = passageOf(row.ev);
+          await db.insert(schema.findings).values({
+            id: row.id,
+            caseId,
+            ownerEmail: OWNER,
+            kind: row.kind,
+            statement: row.statement,
+            provenance: "documented",
+            reviewStatus: "proposed",
+            extractionMethod: "documented",
+          });
+          await db.insert(schema.findingCitations).values({
+            id: `cit_${row.id}`,
+            findingId: row.id,
+            evidenceId: row.ev,
+            passageId: passage.id,
+            caseId,
+            ownerEmail: OWNER,
+            quote: passage.text.slice(0, 40),
+          });
+        }
+
+        const graph = await callAction<{
+          comparisons: Array<{ verdict: string }>;
+          counts: { contradictions: number; potentialContradictions: number; agreements: number };
+        }>("build-case-graph", { caseId }, userContext(OWNER));
+        const report = await callAction<{ contradictions: Array<{ verdict: string }> }>(
+          "build-report",
+          { caseId },
+          userContext(OWNER),
+        );
+        expect(graph.comparisons.length).toBeGreaterThan(0);
+        // A field named `contradictions` must not also carry the agreements, or
+        // the report says "6 contradictions" for a case the engine scored as
+        // zero contradictions and five agreements.
+        expect(report.contradictions.every((c) => c.verdict !== "direct_agreement")).toBe(true);
+        expect(report.contradictions.every((c) => c.verdict !== "partial_agreement")).toBe(true);
+        expect(report.contradictions).toHaveLength(
+          graph.counts.contradictions + graph.counts.potentialContradictions,
+        );
+        // Where the engine did find agreements, the report must carry fewer
+        // entries than the graph's full comparison list.
+        if (graph.counts.agreements > 0) {
+          expect(report.contradictions.length).toBeLessThan(graph.comparisons.length);
+        }
+      });
+
       it("exports the report in every format with identical review marks", async () => {
         const { caseId } = await runScenario(scenario);
         const markdown = await callAction<{ contentBase64: string; filename: string }>(

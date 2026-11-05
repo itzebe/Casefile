@@ -84,6 +84,13 @@ export interface InvestigationReport {
   undated: ReportEvent[];
   claims: ReportFinding[];
   events: ReportFinding[];
+  /**
+   * Only the comparisons that are actually contested. The graph action returns
+   * every comparison, agreements included; a report field named
+   * `contradictions` must not be filled with the agreements too, or a reader
+   * sees "6 contradictions" for a case the engine scored as zero contradictions
+   * and five agreements.
+   */
   contradictions: CaseGraph["comparisons"];
   gaps: CaseGraph["gaps"];
   domainFindings: DomainFinding[];
@@ -288,7 +295,11 @@ export async function buildReport(
     undated: undatedEvents,
     claims,
     events: eventRows.map(toReportFinding),
-    contradictions: graph.comparisons,
+    contradictions: graph.comparisons.filter(
+      (comparison) =>
+        comparison.verdict === "contradiction" ||
+        comparison.verdict === "potential_contradiction",
+    ),
     gaps: graph.gaps,
     domainFindings,
     readiness,
@@ -385,10 +396,7 @@ export function renderReportMarkdown(report: InvestigationReport): string {
 
   lines.push("## 6. Contradictions and competing accounts");
   lines.push("");
-  const contested = report.contradictions.filter(
-    (comparison) =>
-      comparison.verdict === "contradiction" || comparison.verdict === "potential_contradiction",
-  );
+  const contested = report.contradictions;
   if (contested.length === 0) {
     lines.push("No contradictions were identified between the documents.");
   }
