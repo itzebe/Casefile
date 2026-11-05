@@ -1,3 +1,5 @@
+import { ActionContractError } from "@agent-native/core/action";
+import { getAppConfig } from "@agent-native/core/app-config";
 import {
   getStoredModelForEngine,
   resolveEngine,
@@ -18,18 +20,24 @@ import {
  *    told so. Nothing is ever fabricated to fill the gap.
  */
 
-export class ModelUnavailableError extends Error {
+/**
+ * The model could not be reached or returned nothing usable. Typed as a
+ * contract error so the transport reports 503 with a stable code, and the
+ * message ("nothing was recorded") reaches the caller instead of being hidden
+ * behind a generic 500.
+ */
+export class ModelUnavailableError extends ActionContractError {
   readonly code = "model_unavailable";
   constructor(message: string) {
-    super(message);
+    super(message, { errorCode: "model_unavailable", statusCode: 503 });
     this.name = "ModelUnavailableError";
   }
 }
 
-export class ModelOutputError extends Error {
+export class ModelOutputError extends ActionContractError {
   readonly code = "model_output_invalid";
   constructor(message: string) {
-    super(message);
+    super(message, { errorCode: "model_output_invalid", statusCode: 502 });
     this.name = "ModelOutputError";
   }
 }
@@ -58,7 +66,14 @@ export async function runModel(options: RunModelOptions): Promise<string> {
     );
   }
 
+  // The model the app is configured to use (AGENT_MODEL, else the chat's
+  // stored default) wins over the engine's stock default. Without this the
+  // engine's built-in default (`llama3.1` for Ollama) is used even when the app
+  // and the chat are both on a different, installed model, so investigation
+  // fails with "model not found" while chat works.
+  const configuredModel = getAppConfig().agent.model;
   const model =
+    (configuredModel && configuredModel !== "auto" ? configuredModel : undefined) ??
     (await getStoredModelForEngine(engine, { appId: APP_ID })) ??
     engine.defaultModel;
 

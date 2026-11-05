@@ -1,6 +1,6 @@
 import type { ActionRunContext } from "@agent-native/core/action";
 
-import { CasefileAuthError, requireUserEmail } from "./access.js";
+import { requireUserEmail } from "./access.js";
 
 /**
  * Shared request-identity helpers for CASEFILE actions.
@@ -46,14 +46,4 @@ export function casefileContext(ctx: ActionRunContext | undefined): CasefileCont
     caller: ctx?.caller ?? "unknown",
     runId: ctx?.runId ?? null,
   };
-}
-
-/** Maps an authorization failure onto a stable, non-leaking error code. */
-export function toActionError(error: unknown): never {
-  if (error instanceof CasefileAuthError) {
-    const err = new Error(error.message);
-    err.name = error.code;
-    throw err;
-  }
-  throw error;
 }

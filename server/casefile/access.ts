@@ -1,3 +1,4 @@
+import { ActionContractError } from "@agent-native/core/action";
 import { and, eq } from "drizzle-orm";
 
 import { getDb } from "../db/index.js";
@@ -16,12 +17,20 @@ import { newAuditId } from "./ids.js";
  *    so authorization does not depend on a caller remembering to check.
  */
 
-export class CasefileAuthError extends Error {
-  readonly code: string;
+/**
+ * A refusal the caller can act on: not signed in, or a case/evidence the caller
+ * does not own. Extends the framework's `ActionContractError` so the transport
+ * reports the right status (401/404) and a typed `errorCode`, instead of the
+ * generic 500 a bare `Error` collapses to. The message stays deliberately
+ * non-leaking — "Case not found" is identical for absent and unowned cases.
+ */
+export class CasefileAuthError extends ActionContractError {
   constructor(code: string, message: string) {
-    super(message);
+    super(message, {
+      errorCode: code,
+      statusCode: code === "unauthenticated" ? 401 : 404,
+    });
     this.name = "CasefileAuthError";
-    this.code = code;
   }
 }
 

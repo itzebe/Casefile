@@ -1,4 +1,4 @@
-import { defineAction } from "@agent-native/core/action";
+import { defineAction, fail } from "@agent-native/core/action";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
@@ -56,8 +56,9 @@ export default defineAction({
     if (extracted.length === 0) {
       // Say exactly what to do next instead of returning an empty analysis that
       // looks like "no findings".
-      throw new Error(
+      fail(
         "No evidence in this case has extracted text yet. Upload a document and run extractEvidence first.",
+        { errorCode: "no_extracted_evidence", statusCode: 409 },
       );
     }
 

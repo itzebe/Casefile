@@ -1,4 +1,4 @@
-import { defineAction } from "@agent-native/core/action";
+import { defineAction, fail } from "@agent-native/core/action";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
@@ -70,8 +70,9 @@ export default defineAction({
         ),
       );
     if (existingCount.length >= MAX_EVIDENCE_PER_CASE) {
-      throw new Error(
+      fail(
         `This case already holds ${MAX_EVIDENCE_PER_CASE} files, the per-case limit.`,
+        { errorCode: "case_evidence_limit_reached", statusCode: 409 },
       );
     }
 
@@ -79,10 +80,11 @@ export default defineAction({
     // materialised as bytes.
     const approxBytes = Math.floor((args.dataBase64.length * 3) / 4);
     if (approxBytes > MAX_EVIDENCE_BYTES + 1024) {
-      throw new Error(
+      fail(
         `The file is about ${(approxBytes / 1024 / 1024).toFixed(1)} MB; the limit is ${
           MAX_EVIDENCE_BYTES / 1024 / 1024
         } MB.`,
+        { errorCode: "file_too_large", statusCode: 413 },
       );
     }
 
@@ -90,7 +92,10 @@ export default defineAction({
     try {
       data = new Uint8Array(Buffer.from(args.dataBase64, "base64"));
     } catch {
-      throw new Error("The file data could not be decoded from base64.");
+      fail("The file data could not be decoded from base64.", {
+        errorCode: "invalid_base64",
+        statusCode: 400,
+      });
     }
 
     const validation = validateEvidenceFile({
@@ -100,7 +105,12 @@ export default defineAction({
     });
     if (!validation.ok) {
       // A rejected file is reported with the reason, and nothing is stored.
-      throw new Error(validation.message);
+      // A validation failure is the caller's, not the server's, so it is
+      // surfaced as 4xx with a code rather than an opaque 500.
+      fail(validation.message, {
+        errorCode: validation.code,
+        statusCode: validation.code === "file_too_large" ? 413 : 400,
+      });
     }
 
     // Duplicate detection is scoped to the case: the same receipt in two cases
