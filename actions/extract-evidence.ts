@@ -5,6 +5,7 @@ import { z } from "zod";
 import { recordAudit, requireOwnedCase, requireOwnedEvidence } from "../server/casefile/access.js";
 import { casefileContext } from "../server/casefile/context.js";
 import { touchCase } from "../server/casefile/case-queries.js";
+import { classifyDocument } from "../server/casefile/classification.js";
 import { evidenceStoreById } from "../server/casefile/evidence-store.js";
 import { extractEvidence } from "../server/casefile/extraction.js";
 import { newPassageId } from "../server/casefile/ids.js";
@@ -60,6 +61,8 @@ export default defineAction({
       limitation?: string | undefined;
       error?: string | undefined;
       skipped?: boolean | undefined;
+      documentType?: string | undefined;
+      classificationConfidence?: string | null | undefined;
     }> = [];
 
     for (const item of targets) {
@@ -79,6 +82,8 @@ export default defineAction({
           pageCount: item.pageCount ?? undefined,
           limitation: item.extractionError ?? undefined,
           skipped: true,
+          documentType: item.documentType,
+          classificationConfidence: item.classificationConfidence,
         });
         continue;
       }
@@ -137,6 +142,18 @@ export default defineAction({
         );
       }
 
+      // Classify from the extracted text. A human correction is never
+      // overwritten: once someone has set the type, the classifier stays out of
+      // the way. An unsupported file is classified from its filename alone, so
+      // it still gets a best-effort type rather than none.
+      const extractedText = outcome.passages.map((passage) => passage.text).join("\n");
+      const classification = classifyDocument({
+        filename: item.filename,
+        mimeType: item.mimeType,
+        text: extractedText,
+      });
+      const keepHumanType = Boolean(item.classificationCorrectedBy);
+
       await db
         .update(schema.evidence)
         .set({
@@ -144,6 +161,13 @@ export default defineAction({
           extractionError: outcome.limitation ?? outcome.error ?? null,
           extractedAt: new Date().toISOString(),
           pageCount: outcome.pageCount ?? item.pageCount ?? null,
+          ...(keepHumanType
+            ? {}
+            : {
+                documentType: classification.documentType,
+                classificationConfidence: classification.confidence,
+                classificationRationale: JSON.stringify(classification.rationale),
+              }),
         })
         .where(eq(schema.evidence.id, item.id));
 
@@ -155,6 +179,10 @@ export default defineAction({
         pageCount: outcome.pageCount,
         limitation: outcome.limitation,
         error: outcome.error,
+        documentType: keepHumanType ? item.documentType : classification.documentType,
+        classificationConfidence: keepHumanType
+          ? item.classificationConfidence
+          : classification.confidence,
       });
     }
 

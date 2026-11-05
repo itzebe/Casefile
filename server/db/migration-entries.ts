@@ -163,4 +163,20 @@ export const MIGRATIONS: MigrationEntry[] = [
           ON casefile_relationships (owner_email);
       `,
     },
+    {
+      version: 3,
+      name: "casefile-document-classification",
+      sql: `
+        ALTER TABLE casefile_evidence
+          ADD COLUMN IF NOT EXISTS document_type TEXT NOT NULL DEFAULT 'unknown';
+        ALTER TABLE casefile_evidence
+          ADD COLUMN IF NOT EXISTS classification_confidence TEXT;
+        ALTER TABLE casefile_evidence
+          ADD COLUMN IF NOT EXISTS classification_rationale TEXT;
+        ALTER TABLE casefile_evidence
+          ADD COLUMN IF NOT EXISTS classification_corrected_by TEXT;
+        ALTER TABLE casefile_evidence
+          ADD COLUMN IF NOT EXISTS classification_corrected_at TIMESTAMPTZ;
+      `,
+    },
   ];

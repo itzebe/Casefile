@@ -62,6 +62,16 @@ export const evidence = pgTable(
     storageKey: text("storage_key").notNull(),
     // User-facing classification: what this document is in the case.
     category: text("category").notNull().default("uncategorized"),
+    // Automatic classification: what kind of document this is, from its own
+    // text. `unknown` is a real answer, and a person can override it, which
+    // sets `classificationCorrectedBy`.
+    documentType: text("document_type").notNull().default("unknown"),
+    classificationConfidence: text("classification_confidence"),
+    // The signals behind the proposal, as a short JSON array, so the UI can
+    // show why the classifier chose a type.
+    classificationRationale: text("classification_rationale"),
+    classificationCorrectedBy: text("classification_corrected_by"),
+    classificationCorrectedAt: text("classification_corrected_at"),
     // Extraction lifecycle: pending | processing | complete | unsupported | failed.
     extractionStatus: text("extraction_status").notNull().default("pending"),
     extractionError: text("extraction_error"),

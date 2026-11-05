@@ -44,6 +44,66 @@ export const EXTRACTION_STATUSES = [
 export type ExtractionStatus = (typeof EXTRACTION_STATUSES)[number];
 
 /**
+ * What a document is, decided from its own text and its filename, and always
+ * correctable by a person.
+ *
+ * These are the categories a mixed investigation actually contains. They are
+ * deliberately about the *document*, not the case: the same engine classifies a
+ * court bundle, a payment dispute, and a research folder with no per-industry
+ * code path. `unknown` is a first-class answer - a document the classifier
+ * cannot place is reported as unknown rather than forced into the nearest
+ * category.
+ */
+export const DOCUMENT_TYPES = [
+  "court-judgment",
+  "pleading",
+  "affidavit",
+  "witness-statement",
+  "court-order",
+  "contract",
+  "invoice",
+  "receipt",
+  "bank-statement",
+  "payment-confirmation",
+  "correspondence",
+  "email",
+  "medical-report",
+  "lab-report",
+  "insurance-document",
+  "research-paper",
+  "business-report",
+  "general-document",
+  "unknown",
+] as const;
+export type DocumentType = (typeof DOCUMENT_TYPES)[number];
+
+/** How sure the classifier is. A word, not a number: 0.73 would be a fiction. */
+export const CLASSIFICATION_CONFIDENCE = ["high", "medium", "low"] as const;
+export type ClassificationConfidence = (typeof CLASSIFICATION_CONFIDENCE)[number];
+
+export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
+  "court-judgment": "Court judgment",
+  pleading: "Pleading or court filing",
+  affidavit: "Affidavit",
+  "witness-statement": "Witness statement",
+  "court-order": "Court order",
+  contract: "Contract or agreement",
+  invoice: "Invoice",
+  receipt: "Receipt",
+  "bank-statement": "Bank statement",
+  "payment-confirmation": "Payment confirmation",
+  correspondence: "Correspondence",
+  email: "Email or message",
+  "medical-report": "Medical report",
+  "lab-report": "Laboratory report",
+  "insurance-document": "Insurance document",
+  "research-paper": "Research paper",
+  "business-report": "Business report",
+  "general-document": "General document",
+  unknown: "Unknown or mixed",
+};
+
+/**
  * Where a statement came from. This is the field that keeps the app honest:
  * the UI renders each value differently, and nothing is ever shown as an
  * established fact unless a human confirmed it.
