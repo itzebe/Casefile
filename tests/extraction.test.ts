@@ -291,6 +291,22 @@ describe("format detection", () => {
     const txt = validateEvidenceFile({ filename: "notes.txt", data: textBytes("body only") });
     expect(txt.ok && txt.mimeType).toBe("text/plain");
   });
+
+  it("does not mistake prose with commas and newlines for a CSV", () => {
+    // A judgment that states "5,000.00 USD" and spans several lines was
+    // previously detected as CSV, which split the amount into two columns.
+    const prose = textBytes(
+      "JUDGMENT\nIt is hereby ordered that the defendant pay damages of 5,000.00 USD and costs.\nThe court finds that the agreement was breached.\n",
+    );
+    const result = validateEvidenceFile({ filename: "judgment", data: prose });
+    expect(result.ok && result.mimeType).toBe("text/plain");
+  });
+
+  it("still detects a real delimited file with no extension", () => {
+    const csv = textBytes("date,description,amount\n2024-01-01,Widget,10.00\n2024-01-02,Gadget,20.00\n");
+    const result = validateEvidenceFile({ filename: "statement", data: csv });
+    expect(result.ok && result.mimeType).toBe("text/csv");
+  });
 });
 
 describe("ZIP safety", () => {

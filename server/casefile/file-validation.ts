@@ -102,10 +102,50 @@ function classifyTextLike(
   if (CSV_EXTENSIONS.includes(extension)) return "text/csv";
   if (MARKDOWN_EXTENSIONS.includes(extension)) return "text/markdown";
   if (TEXT_EXTENSIONS.includes(extension)) return "text/plain";
-  // No recognised extension: a comma-and-newline shape is CSV, otherwise text.
+  // No recognised extension: decide from the content's structure, not from the
+  // mere presence of a comma. Prose is full of commas ("... damages of
+  // 5,000.00 USD and costs"), so a comma-and-newline test classifies an
+  // ordinary letter as CSV and then mangles its numbers into columns. A real
+  // delimited file has the same field count on most of its lines.
   const head = new TextDecoder("utf-8").decode(sample);
-  if (head.includes(",") && head.includes("\n")) return "text/csv";
-  return "text/plain";
+  return looksLikeDelimited(head) ? "text/csv" : "text/plain";
+}
+
+/**
+ * Whether the text is a delimited table rather than prose.
+ *
+ * Requires at least two non-empty lines, a consistent comma field count of two
+ * or more across most lines, and no line that is prose with a single comma. A
+ * quoted field containing a comma is tolerated by counting fields outside
+ * quotes.
+ */
+function looksLikeDelimited(text: string): boolean {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 50);
+  if (lines.length < 2) return false;
+
+  const counts = lines.map(countCommaFields);
+  const multi = counts.filter((count) => count >= 2);
+  // Most lines must be multi-field, and the field count must be consistent.
+  if (multi.length < Math.max(2, Math.ceil(lines.length * 0.6))) return false;
+  const common = counts[0]!;
+  const consistent = counts.filter((count) => count === common).length;
+  return consistent >= Math.max(2, Math.ceil(lines.length * 0.6));
+}
+
+/** Counts comma-separated fields on a line, ignoring commas inside quotes. */
+function countCommaFields(line: string): number {
+  let fields = 1;
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    if (char === '"') inQuotes = !inQuotes;
+    else if (char === "," && !inQuotes) fields += 1;
+  }
+  return fields;
 }
 
 export function validateEvidenceFile(input: {
