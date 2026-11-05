@@ -31,7 +31,17 @@ export interface DetectedAmount {
 
 export interface DetectedReference {
   text: string;
-  kind: "transaction" | "order" | "invoice" | "account" | "reference" | "hash";
+  kind:
+    | "transaction"
+    | "order"
+    | "invoice"
+    | "account"
+    | "reference"
+    | "hash"
+    | "policy"
+    | "claim"
+    | "case"
+    | "contract";
   index: number;
 }
 
@@ -174,6 +184,13 @@ const REFERENCE_PATTERNS: Array<{ kind: DetectedReference["kind"]; re: RegExp }>
   { kind: "order", re: /\b(?:order)[\s_-]?(?:id|no|number|ref)?[:#\s-]*([A-Za-z0-9][A-Za-z0-9._-]{3,40})\b/gi },
   { kind: "invoice", re: /\b(?:invoice|inv)[\s_-]?(?:id|no|number|ref)?[:#\s-]*([A-Za-z0-9][A-Za-z0-9._/-]{3,40})\b/gi },
   { kind: "account", re: /\b(?:account|acct)[\s_-]?(?:id|no|number)[:#\s-]*([A-Za-z0-9][A-Za-z0-9*._-]{3,40})\b/gi },
+  // Policy, claim, and case numbers are what link a medical report to an
+  // insurance claim, and a judgment to the pleadings it decides. Without them
+  // those documents look unrelated.
+  { kind: "policy", re: /\b(?:policy)[\s_-]?(?:id|no|number|ref)?\.?[:#\s-]*([A-Za-z0-9][A-Za-z0-9._/-]{3,40})\b/gi },
+  { kind: "claim", re: /\b(?:claim)[\s_-]?(?:id|no|number|ref)?\.?[:#\s-]*([A-Za-z0-9][A-Za-z0-9._/-]{3,40})\b/gi },
+  { kind: "case", re: /\b(?:case)[\s_-]?(?:id|no|number|ref)?\.?[:#\s-]*([A-Za-z0-9][A-Za-z0-9._/-]{3,40})\b/gi },
+  { kind: "contract", re: /\b(?:contract|agreement|deed)[\s_-]?(?:id|no|number|ref)?\.?[:#\s-]*([A-Za-z0-9][A-Za-z0-9._/-]{3,40})\b/gi },
   { kind: "reference", re: /\b(?:reference|ref|confirmation)[\s_-]?(?:id|no|number)?[:#\s-]*([A-Za-z0-9][A-Za-z0-9._-]{5,40})\b/gi },
 ];
 
