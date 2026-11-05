@@ -133,6 +133,14 @@ rejected even if it looks better in isolation.
   `NODE_OPTIONS="--import ./scripts/dev-ollama-timeout.mjs"` so a slow first
   token is not mistaken for a dead provider. This is a local-dev workaround,
   not a production setting.
+- **Long actions need an explicit client timeout.** The framework aborts an
+  action call after 60s unless the caller passes `timeoutMs`. An action that
+  runs a model over a case's passages (`analyze-evidence`) legitimately takes
+  longer, so its mutation sets `timeoutMs`. Without it the request is dropped
+  mid-flight while the server keeps working, and the user sees nothing.
+- **One concept, one serialiser.** `get-case` and `list-evidence` both feed the
+  workspace's evidence panel. Any field the panel renders (`passageCount`,
+  `citedByFindings`) must be present on both, or the panel silently blanks.
 - **Do not deploy** without an explicit instruction to deploy.
 
 ## 6. Testing and verification

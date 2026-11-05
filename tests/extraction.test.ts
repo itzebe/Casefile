@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import { detectAmounts, detectDates, detectReferences, hasConflictingDates } from "../server/casefile/entities.js";
-import { extractCsvFile, extractPdfFile, extractTextFile } from "../server/casefile/extraction.js";
+import { extractCsvFile, extractImageFile, extractPdfFile, extractTextFile } from "../server/casefile/extraction.js";
 import { RECEIPT_TEXT, STATEMENT_CSV, CONTRACT_TEXT, pdfBytes, textBytes, csvBytes } from "./fixtures/evidence.js";
 
 describe("detectDates", () => {
@@ -113,5 +115,42 @@ describe("extractPdfFile", () => {
   it("reports a corrupt PDF as failed", async () => {
     const result = await extractPdfFile(textBytes("this is not a pdf at all"));
     expect(result.status).toBe("failed");
+  });
+});
+
+describe("extractImageFile (OCR)", () => {
+  // Gate on the module's own probe rather than reading the environment, so the
+  // test skips only when the engine genuinely is not configured.
+  let hasEngine = false;
+  beforeAll(async () => {
+    const { ocrBinaryPath } = await import("../server/casefile/ocr.js");
+    hasEngine = ocrBinaryPath() !== null;
+  });
+
+  it("reads text from a real image with the configured OCR engine", async () => {
+    // Skipped rather than faked when no engine is configured: a test that
+    // stubbed OCR would not prove the real path works.
+    if (!hasEngine) return;
+    const bytes = new Uint8Array(
+      readFileSync(fileURLToPath(new URL("./fixtures/ocr-receipt.png", import.meta.url))),
+    );
+    const result = await extractImageFile(bytes, "image/png");
+    expect(result.status).toBe("complete");
+    const text = result.passages.map((passage) => passage.text).join("\n");
+    expect(text).toContain("PAYMENT RECEIPT");
+    expect(text).toContain("Northwind Traders");
+    expect(text).toContain("TXN-88421907");
+    expect(text).toContain("249.99");
+    expect(result.passages[0].ref).toBe("image text 1");
+  });
+
+  it("reports an image with no readable text as unsupported, never empty", async () => {
+    if (!hasEngine) return;
+    // A blank PNG: OCR succeeds but finds nothing, so the file must be reported
+    // as unreadable rather than as an empty document.
+    const { pngBytes } = await import("./fixtures/evidence.js");
+    const result = await extractImageFile(pngBytes(), "image/png");
+    expect(result.status).toBe("unsupported");
+    expect(result.limitation).toMatch(/no readable text/i);
   });
 });

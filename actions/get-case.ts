@@ -1,5 +1,5 @@
 import { defineAction } from "@agent-native/core/action";
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, count, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { requireOwnedCase } from "../server/casefile/access.js";
@@ -64,73 +64,103 @@ export default defineAction({
           .orderBy(desc(schema.findings.createdAt))
       : [];
 
-    const citations = findingRows.length
-      ? await db
-          .select()
-          .from(schema.findingCitations)
-          .where(eq(schema.findingCitations.caseId, row.id))
-      : [];
+      // Passage and citation totals are aggregated server-side. The workspace
+      // shows "N passages" and "cited by N findings" per file, so both must be
+      // present on every evidence item this action returns.
+      const passageCounts = evidenceRows.length
+        ? await db
+            .select({ evidenceId: schema.evidencePassages.evidenceId, total: count() })
+            .from(schema.evidencePassages)
+            .where(eq(schema.evidencePassages.caseId, row.id))
+            .groupBy(schema.evidencePassages.evidenceId)
+        : [];
+      const passagesByEvidence = new Map(
+        passageCounts.map((entry) => [entry.evidenceId, Number(entry.total)]),
+      );
 
-    const citationsByFinding = new Map<string, typeof citations>();
-    for (const citation of citations) {
-      const list = citationsByFinding.get(citation.findingId) ?? [];
-      list.push(citation);
-      citationsByFinding.set(citation.findingId, list);
-    }
+      const citationCounts = evidenceRows.length
+        ? await db
+            .select({
+              evidenceId: schema.findingCitations.evidenceId,
+              total: sql<number>`count(distinct ${schema.findingCitations.findingId})`,
+            })
+            .from(schema.findingCitations)
+            .where(eq(schema.findingCitations.caseId, row.id))
+            .groupBy(schema.findingCitations.evidenceId)
+        : [];
+      const citationsByEvidence = new Map(
+        citationCounts.map((entry) => [entry.evidenceId, Number(entry.total)]),
+      );
 
-    return {
-      case: {
-        id: row.id,
-        title: row.title,
-        description: row.description,
-        category: row.category,
-        status: row.status,
-        amountMinor: row.amountMinor,
-        currency: row.currency,
-        revision: row.revision,
-        createdAt: String(row.createdAt),
-        updatedAt: String(row.updatedAt),
-      },
-      evidence: evidenceRows.map((item) => ({
-        ...item,
-        createdAt: String(item.createdAt),
-      })),
-      claims: findingRows
-        .filter((finding) => finding.kind === "claim")
-        .map((finding) => ({
-          id: finding.id,
-          statement: finding.statement,
-          provenance: finding.provenance,
-          reviewStatus: finding.reviewStatus,
-          confidence: finding.confidence,
-          uncertainty: readUncertainty(finding.uncertainty),
-          correctedBy: finding.correctedBy,
-          citations: (citationsByFinding.get(finding.id) ?? []).map((citation) => ({
-            evidenceId: citation.evidenceId,
-            passageId: citation.passageId,
-            quote: citation.quote,
-          })),
+      const citations = findingRows.length
+        ? await db
+            .select()
+            .from(schema.findingCitations)
+            .where(eq(schema.findingCitations.caseId, row.id))
+        : [];
+
+      const citationsByFinding = new Map<string, typeof citations>();
+      for (const citation of citations) {
+        const list = citationsByFinding.get(citation.findingId) ?? [];
+        list.push(citation);
+        citationsByFinding.set(citation.findingId, list);
+      }
+
+      return {
+        case: {
+          id: row.id,
+          title: row.title,
+          description: row.description,
+          category: row.category,
+          status: row.status,
+          amountMinor: row.amountMinor,
+          currency: row.currency,
+          revision: row.revision,
+          createdAt: String(row.createdAt),
+          updatedAt: String(row.updatedAt),
+        },
+        evidence: evidenceRows.map((item) => ({
+          ...item,
+          createdAt: String(item.createdAt),
+          passageCount: passagesByEvidence.get(item.id) ?? 0,
+          citedByFindings: citationsByEvidence.get(item.id) ?? 0,
         })),
-      events: findingRows
-        .filter((finding) => finding.kind === "event")
-        .map((finding) => ({
-          id: finding.id,
-          statement: finding.statement,
-          provenance: finding.provenance,
-          reviewStatus: finding.reviewStatus,
-          eventDate: finding.eventDate,
-          eventDateText: finding.eventDateText,
-          datePrecision: finding.datePrecision,
-          dateConflict: finding.dateConflict,
-          confidence: finding.confidence,
-          uncertainty: readUncertainty(finding.uncertainty),
-          correctedBy: finding.correctedBy,
-          citations: (citationsByFinding.get(finding.id) ?? []).map((citation) => ({
-            evidenceId: citation.evidenceId,
-            passageId: citation.passageId,
-            quote: citation.quote,
+        claims: findingRows
+          .filter((finding) => finding.kind === "claim")
+          .map((finding) => ({
+            id: finding.id,
+            statement: finding.statement,
+            provenance: finding.provenance,
+            reviewStatus: finding.reviewStatus,
+            confidence: finding.confidence,
+            uncertainty: readUncertainty(finding.uncertainty),
+            correctedBy: finding.correctedBy,
+            citations: (citationsByFinding.get(finding.id) ?? []).map((citation) => ({
+              evidenceId: citation.evidenceId,
+              passageId: citation.passageId,
+              quote: citation.quote,
+            })),
           })),
-        })),
-    };
-  },
-});
+        events: findingRows
+          .filter((finding) => finding.kind === "event")
+          .map((finding) => ({
+            id: finding.id,
+            statement: finding.statement,
+            provenance: finding.provenance,
+            reviewStatus: finding.reviewStatus,
+            eventDate: finding.eventDate,
+            eventDateText: finding.eventDateText,
+            datePrecision: finding.datePrecision,
+            dateConflict: finding.dateConflict,
+            confidence: finding.confidence,
+            uncertainty: readUncertainty(finding.uncertainty),
+            correctedBy: finding.correctedBy,
+            citations: (citationsByFinding.get(finding.id) ?? []).map((citation) => ({
+              evidenceId: citation.evidenceId,
+              passageId: citation.passageId,
+              quote: citation.quote,
+            })),
+          })),
+      };
+    },
+  });

@@ -326,6 +326,35 @@ describe("extraction and analysis flow", () => {
     expect(listed.evidence[0].passageCount).toBe(1);
   });
 
+  it("returns the same evidence-item fields from get-case as the UI reads", async () => {
+    const caseId = await newCase();
+    await upload(caseId, "receipt.txt", textBytes(RECEIPT_TEXT));
+    await callAction("extract-evidence", { caseId }, userContext(OWNER));
+
+    const detail = await callAction<{
+      evidence: Array<Record<string, unknown>>;
+    }>("get-case", { caseId }, userContext(OWNER));
+
+    // Every field the workspace's EvidenceItem declares must be present, or the
+    // panel renders a blank. Both list-evidence and get-case feed the same
+    // component, so the two serialisers must agree.
+    for (const field of [
+      "id",
+      "filename",
+      "mimeType",
+      "byteSize",
+      "category",
+      "extractionStatus",
+      "extractionError",
+      "passageCount",
+      "citedByFindings",
+    ]) {
+      expect(detail.evidence[0], `missing ${field}`).toHaveProperty(field);
+    }
+    expect(detail.evidence[0].passageCount).toBe(1);
+    expect(detail.evidence[0].citedByFindings).toBe(0);
+  });
+
   it("removes derived findings when their only evidence is deleted", async () => {
     const caseId = await newCase();
     const uploaded = await upload(caseId, "receipt.txt", textBytes(RECEIPT_TEXT));

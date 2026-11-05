@@ -99,6 +99,13 @@ const EVIDENCE_CATEGORIES = [
   "other",
 ];
 
+/**
+ * The client aborts an action after 60s by default. Analysis runs a model over
+ * every extracted passage and routinely takes longer, so it is given its own
+ * budget instead of failing mid-flight.
+ */
+export const ANALYSIS_TIMEOUT_MS = 5 * 60_000;
+
 function humanBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
@@ -362,6 +369,10 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
   });
 
   const analyze = useActionMutation("analyze-evidence", {
+    // Analysis runs a model over every extracted passage, which routinely
+    // exceeds the client's 60s default. Without this the request is aborted
+    // while the server is still working, and the proposals are lost.
+    timeoutMs: ANALYSIS_TIMEOUT_MS,
     onSuccess: (result: { claimsProposed: number; eventsProposed: number }) => {
       setNotice(
         `Proposed ${result.claimsProposed} claim(s) and ${result.eventsProposed} event(s). ` +

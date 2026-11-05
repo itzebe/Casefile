@@ -20,7 +20,8 @@ export type OcrResult =
 let cachedAvailability: { path: string; available: boolean } | null = null;
 
 export function ocrBinaryPath(): string | null {
-  const configured = process.env.CASEFILE_TESSERACT_PATH?.trim();
+  // A local filesystem path to a binary, never a credential.
+  const configured = process.env.CASEFILE_TESSERACT_PATH?.trim(); // guard:allow-env-credential — local binary path, not a credential
   if (!configured) return null;
   if (cachedAvailability?.path === configured) {
     return cachedAvailability.available ? configured : null;
@@ -31,7 +32,7 @@ export function ocrBinaryPath(): string | null {
 }
 
 export function ocrUnavailableReason(): string {
-  const configured = process.env.CASEFILE_TESSERACT_PATH?.trim();
+  const configured = process.env.CASEFILE_TESSERACT_PATH?.trim(); // guard:allow-env-credential — local binary path, not a credential
   if (configured && !ocrBinaryPath()) {
     return `CASEFILE_TESSERACT_PATH is set to "${configured}", which does not exist.`;
   }

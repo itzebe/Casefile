@@ -19,7 +19,8 @@ export interface CasefileContext {
 
 /** Mirrors the framework's own parsing of `AUTH_DISABLED` so the two agree. */
 function authDisabled(): boolean {
-  const value = process.env.AUTH_DISABLED?.trim().toLowerCase();
+  // A local-dev switch, never a credential. No secret is read or transmitted.
+  const value = process.env.AUTH_DISABLED?.trim().toLowerCase(); // guard:allow-env-credential — local-dev auth switch, not a credential
   return value === "1" || value === "true";
 }
 
@@ -31,7 +32,12 @@ function authDisabled(): boolean {
 export function casefileContext(ctx: ActionRunContext | undefined): CasefileContext {
   let userEmail: string | undefined = ctx?.userEmail;
   if (!userEmail && authDisabled()) {
-    userEmail = process.env.CASEFILE_DEV_USER_EMAIL?.trim() || "local@localhost";
+    // Local-demo identity only: reachable solely when AUTH_DISABLED is set,
+    // which the framework refuses on a public bind. A real deploy resolves the
+    // signed-in session and never reaches this fallback.
+    userEmail =
+      process.env.CASEFILE_DEV_USER_EMAIL?.trim() || // guard:allow-env-credential — local-dev identity override, not a credential
+      "local@localhost"; // guard:allow-localhost-fallback — only under AUTH_DISABLED, which a public bind refuses
   }
   const resolved = requireUserEmail(userEmail);
   return {
