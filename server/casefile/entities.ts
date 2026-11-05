@@ -30,7 +30,10 @@ export interface DetectedAmount {
 }
 
 export interface DetectedReference {
+  /** The matched text as it appears, including any label. */
   text: string;
+  /** The identifier value alone, without its label ("SA-2024-0042"). */
+  value: string;
   kind:
     | "transaction"
     | "order"
@@ -178,32 +181,64 @@ export function detectAmounts(text: string): DetectedAmount[] {
   return dedupeByIndex(found);
 }
 
+// The lookahead `(?=[A-Za-z0-9._/-]*\d)` requires the captured value to carry a
+// digit. Two failures come from leaving it out. A label word can be captured as
+// its own value ("Contract No. SA-2024-0042" yields "Contract"), and - worse -
+// because the separator classes match whitespace, a match can start at one
+// label and swallow the next word, so "AGREEMENT\nContract No. SA-2024-0042"
+// consumes "Contract" as the value and the real identifier is never seen. With
+// the lookahead the engine skips the label and lands on SA-2024-0042.
 const REFERENCE_PATTERNS: Array<{ kind: DetectedReference["kind"]; re: RegExp }> = [
   { kind: "hash", re: /\b0x[a-fA-F0-9]{16,}\b/g },
-  { kind: "transaction", re: /\b(?:txn|tx|transaction)[\s_-]?(?:id|no|number|ref)?[:#\s-]*([A-Za-z0-9][A-Za-z0-9._-]{5,40})\b/gi },
-  { kind: "order", re: /\b(?:order)[\s_-]?(?:id|no|number|ref)?[:#\s-]*([A-Za-z0-9][A-Za-z0-9._-]{3,40})\b/gi },
-  { kind: "invoice", re: /\b(?:invoice|inv)[\s_-]?(?:id|no|number|ref)?[:#\s-]*([A-Za-z0-9][A-Za-z0-9._/-]{3,40})\b/gi },
-  { kind: "account", re: /\b(?:account|acct)[\s_-]?(?:id|no|number)[:#\s-]*([A-Za-z0-9][A-Za-z0-9*._-]{3,40})\b/gi },
+  { kind: "transaction", re: /\b(?:txn|tx|transaction)[\s_-]?(?:id|no|number|ref)?[:#\s-]*(?=[A-Za-z0-9._/-]*\d)([A-Za-z0-9][A-Za-z0-9._-]{5,40})\b/gi },
+  { kind: "order", re: /\b(?:order)[\s_-]?(?:id|no|number|ref)?[:#\s-]*(?=[A-Za-z0-9._/-]*\d)([A-Za-z0-9][A-Za-z0-9._-]{3,40})\b/gi },
+  { kind: "invoice", re: /\b(?:invoice|inv)[\s_-]?(?:id|no|number|ref)?[:#\s-]*(?=[A-Za-z0-9._/-]*\d)([A-Za-z0-9][A-Za-z0-9._/-]{3,40})\b/gi },
+  { kind: "account", re: /\b(?:account|acct)[\s_-]?(?:id|no|number)[:#\s-]*(?=[A-Za-z0-9._/-]*\d)([A-Za-z0-9][A-Za-z0-9*._-]{3,40})\b/gi },
   // Policy, claim, and case numbers are what link a medical report to an
   // insurance claim, and a judgment to the pleadings it decides. Without them
   // those documents look unrelated.
-  { kind: "policy", re: /\b(?:policy)[\s_-]?(?:id|no|number|ref)?\.?[:#\s-]*([A-Za-z0-9][A-Za-z0-9._/-]{3,40})\b/gi },
-  { kind: "claim", re: /\b(?:claim)[\s_-]?(?:id|no|number|ref)?\.?[:#\s-]*([A-Za-z0-9][A-Za-z0-9._/-]{3,40})\b/gi },
-  { kind: "case", re: /\b(?:case)[\s_-]?(?:id|no|number|ref)?\.?[:#\s-]*([A-Za-z0-9][A-Za-z0-9._/-]{3,40})\b/gi },
-  { kind: "contract", re: /\b(?:contract|agreement|deed)[\s_-]?(?:id|no|number|ref)?\.?[:#\s-]*([A-Za-z0-9][A-Za-z0-9._/-]{3,40})\b/gi },
-  { kind: "reference", re: /\b(?:reference|ref|confirmation)[\s_-]?(?:id|no|number)?[:#\s-]*([A-Za-z0-9][A-Za-z0-9._-]{5,40})\b/gi },
+  { kind: "policy", re: /\b(?:policy)[\s_-]?(?:id|no|number|ref)?\.?[:#\s-]*(?=[A-Za-z0-9._/-]*\d)([A-Za-z0-9][A-Za-z0-9._/-]{3,40})\b/gi },
+  { kind: "claim", re: /\b(?:claim)[\s_-]?(?:id|no|number|ref)?\.?[:#\s-]*(?=[A-Za-z0-9._/-]*\d)([A-Za-z0-9][A-Za-z0-9._/-]{3,40})\b/gi },
+  { kind: "case", re: /\b(?:case)[\s_-]?(?:id|no|number|ref)?\.?[:#\s-]*(?=[A-Za-z0-9._/-]*\d)([A-Za-z0-9][A-Za-z0-9._/-]{3,40})\b/gi },
+  { kind: "contract", re: /\b(?:contract|agreement|deed)[\s_-]?(?:id|no|number|ref)?\.?[:#\s-]*(?=[A-Za-z0-9._/-]*\d)([A-Za-z0-9][A-Za-z0-9._/-]{3,40})\b/gi },
+  { kind: "reference", re: /\b(?:reference|ref|confirmation)[\s_-]?(?:id|no|number)?[:#\s-]*(?=[A-Za-z0-9._/-]*\d)([A-Za-z0-9][A-Za-z0-9._-]{5,40})\b/gi },
 ];
 
 export function detectReferences(text: string): DetectedReference[] {
   const found: DetectedReference[] = [];
   for (const { kind, re } of REFERENCE_PATTERNS) {
     for (const m of text.matchAll(re)) {
-      const value = m[1] ?? m[0] ?? "";
+      const value = (m[1] ?? m[0] ?? "").trim();
       if (!value) continue;
-      found.push({ text: m[0].trim(), kind, index: m.index ?? 0 });
+      found.push({ text: m[0].trim(), value, kind, index: m.index ?? 0 });
     }
   }
-  return dedupeByIndex(found);
+  return dedupeReferences(found);
+}
+
+/**
+ * Keeps one reference per starting position.
+ *
+ * Two patterns can match at the same offset: "Reference: Contract No.
+ * SA-2024-0042" is matched by the generic `reference` pattern (value
+ * "Contract") and by the `contract` pattern (value "SA-2024-0042"). Keeping the
+ * first would throw away the identifier and keep its label, so a value that
+ * carries a digit - the actual identifier - wins; failing that, the longer value.
+ */
+function dedupeReferences(items: DetectedReference[]): DetectedReference[] {
+  const byIndex = new Map<number, DetectedReference>();
+  for (const item of items) {
+    const existing = byIndex.get(item.index);
+    if (!existing || isMoreIdentifiable(item, existing)) byIndex.set(item.index, item);
+  }
+  return [...byIndex.values()].sort((a, b) => a.index - b.index);
+}
+
+function isMoreIdentifiable(a: DetectedReference, b: DetectedReference): boolean {
+  const aDigit = /\d/.test(a.value);
+  const bDigit = /\d/.test(b.value);
+  if (aDigit !== bDigit) return aDigit;
+  return a.value.length > b.value.length;
 }
 
 /** ISO dates that appear in the text, used to detect conflicting dates. */
@@ -291,7 +326,7 @@ export function detectParties(text: string): DetectedParty[] {
  * keeps a bare "4242" (a card's last four) from being treated as an identifier.
  */
 export function referenceKeys(reference: DetectedReference): string[] {
-  const raw = reference.text.trim();
+  const raw = reference.value.trim();
   const colon = raw.indexOf(":");
   const value = colon >= 0 ? raw.slice(colon + 1).trim() : raw;
 
@@ -300,6 +335,11 @@ export function referenceKeys(reference: DetectedReference): string[] {
   const consider = (text: string) => {
     const key = compact(text);
     if (key.length < 5) return;
+    // An identifier carries a digit. A pure word - "contract", "agreement",
+    // "policy" - is the label of an identifier, not the identifier itself, and
+    // two unrelated documents both say "contract". Matching on it would link
+    // them for no reason, so require at least one digit.
+    if (!/\d/.test(key)) return;
     // A bare number must be long enough to be an identifier rather than a card's
     // last four digits or a short amount.
     if (/^\d+$/.test(key) && key.length < 6) return;

@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { detectAmounts, detectDates, detectReferences, hasConflictingDates } from "../server/casefile/entities.js";
+import { detectAmounts, detectDates, detectReferences, hasConflictingDates, referenceKeys } from "../server/casefile/entities.js";
 import {
   extractCsvFile,
   extractEvidence,
@@ -69,6 +69,42 @@ describe("detectReferences", () => {
   it("finds a hex hash", () => {
     const refs = detectReferences("tx 0xabcdef0123456789abcdef0123456789");
     expect(refs.some((r) => r.kind === "hash")).toBe(true);
+  });
+  it("keys an identifier by the value, not the label word", () => {
+    // "Contract No. SA-2024-0042" is identified by SA-2024-0042. The word
+    // "contract" alone must never be a shared key, or every contract in a case
+    // would be linked to every other one.
+    const refs = detectReferences("Contract No. SA-2024-0042");
+    const keys = refs.flatMap((r) => referenceKeys(r));
+    expect(keys).toContain("sa20240042");
+    expect(keys).not.toContain("contract");
+  });
+  it("does not treat a bare label word as an identifier", () => {
+    const keys = detectReferences("This Agreement is governed by the law.").flatMap((r) =>
+      referenceKeys(r),
+    );
+    expect(keys).not.toContain("agreement");
+  });
+
+  it("finds the identifier even when a preceding label word would swallow it", () => {
+    // "SERVICE AGREEMENT\nContract No. SA-2024-0042": the pattern for the label
+    // "agreement" can match across the newline and capture the next word
+    // ("Contract") as its value, so the real identifier was never detected and
+    // a contract and its invoice were never linked.
+    const text = "SERVICE AGREEMENT\nContract No. SA-2024-0042\nBetween the parties.";
+    const keys = detectReferences(text).flatMap((r) => referenceKeys(r));
+    expect(keys).toContain("sa20240042");
+  });
+
+  it("reads the same contract number from a reference line", () => {
+    const contract = detectReferences("Contract No. SA-2024-0042").flatMap((r) =>
+      referenceKeys(r),
+    );
+    const invoice = detectReferences("Reference: Contract No. SA-2024-0042").flatMap((r) =>
+      referenceKeys(r),
+    );
+    expect(contract).toContain("sa20240042");
+    expect(invoice).toContain("sa20240042");
   });
 });
 

@@ -14,6 +14,7 @@ import {
   detectDates,
   detectParties,
   detectReferences,
+  mostSpecificKeys,
   partyKey,
   referenceKeys,
 } from "./entities.js";
@@ -239,8 +240,13 @@ function candidatePassageEdges(passages: IndexedPassage[]): CandidateEdge[] {
     }
   };
 
+  // One key per passage: the most specific identifier it carries. Indexing
+  // every normalisation would make a pair match on whichever key happened to be
+  // seen first, and passage rows come back in random-id order, so the recorded
+  // matchKey would vary between runs. Choosing the most specific key up front
+  // makes the relationship, and the explanation printed for it, deterministic.
   for (const [key, group] of indexBy(passages, (p) =>
-    detectReferences(p.text).flatMap((r) => referenceKeys(r)),
+    mostSpecificKeys(detectReferences(p.text).flatMap((r) => referenceKeys(r))),
   )) {
     add(
       group,
