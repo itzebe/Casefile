@@ -41,3 +41,34 @@ describe("workspace client wiring", () => {
     expect(workspaceSource).toMatch(/citedByFindings:\s*number/);
   });
 });
+
+describe("cross-document panel wiring", () => {
+  it("renders the panel and its build control", () => {
+    expect(workspaceSource).toContain('data-testid="cross-document-panel"');
+    expect(workspaceSource).toContain("Connect the documents");
+    expect(workspaceSource).toContain("<CrossDocumentPanel");
+  });
+
+  it("calls the cross-document actions the panel depends on", () => {
+    expect(workspaceSource).toContain('useActionMutation("build-case-graph"');
+    expect(workspaceSource).toContain('useActionMutation("update-relationship"');
+    expect(workspaceSource).toContain('useActionQuery<');
+    // The passage viewer reads the document behind a citation.
+    expect(workspaceSource).toContain('"get-evidence"');
+    expect(workspaceSource).toContain('data-testid="passage-viewer"');
+  });
+
+  it("reports a contradiction with the shared reference it matched on", () => {
+    // A reviewer must be able to check the link, not just read the verdict, so
+    // the panel prints the shared reference next to the conflicting assertions.
+    expect(workspaceSource).toContain("shared reference:");
+    expect(workspaceSource).toContain("comparison.sharedRefs");
+  });
+
+  it("never renders a bare confidence score as the reason for a link", () => {
+    // The product promises explainability: a relationship shows the identifier
+    // it matched on and its rationale, not an opaque number.
+    expect(workspaceSource).toContain("relationship.matchKey");
+    expect(workspaceSource).toContain("relationship.rationale");
+  });
+});

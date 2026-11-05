@@ -14,4 +14,5 @@ export const newEvidenceId = () => makeId("ev");
 export const newPassageId = () => makeId("psg");
 export const newFindingId = () => makeId("find");
 export const newCitationId = () => makeId("cite");
+export const newRelationshipId = () => makeId("rel");
 export const newAuditId = () => makeId("audit");

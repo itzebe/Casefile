@@ -81,6 +81,54 @@ export const SUPPORTED_MIME_TYPES = [
 ] as const;
 export type SupportedMimeType = (typeof SUPPORTED_MIME_TYPES)[number];
 
+/**
+ * Cross-document relationship vocabulary (Mission 3).
+ *
+ * A relationship is an edge between two things that already exist in the case:
+ * two passages, a passage and a finding, two findings. It is never invented
+ * because two documents share a word; the engine requires a shared explicit
+ * identifier (a transaction reference, an amount, a normalised date, a name)
+ * before it will draw an edge, and it records the identifier it matched on.
+ */
+export const RELATIONSHIP_TYPES = [
+  "same_identifier", // two passages carry the same transaction/order/invoice reference
+  "same_amount", // two passages state the same monetary amount
+  "same_date", // two passages carry the same normalised date
+  "same_party", // two passages name the same person or organisation
+  "corroborates", // one finding is supported by a passage from a second document
+  "contradicts", // two findings make incompatible assertions about the same subject
+  "potential_contradiction", // same subject, but the difference may be explainable
+  "addresses_gap", // a passage supplies evidence a finding was missing
+] as const;
+export type RelationshipType = (typeof RELATIONSHIP_TYPES)[number];
+
+/**
+ * How an edge was established. `direct` means the two sides literally share an
+ * explicit identifier. `inferred` means the engine joined them through a
+ * normalised value (a date, an amount) and the edge is therefore weaker.
+ */
+export const RELATIONSHIP_BASIS = ["direct", "inferred"] as const;
+export type RelationshipBasis = (typeof RELATIONSHIP_BASIS)[number];
+
+export const RELATIONSHIP_NODE_TYPES = ["evidence", "passage", "finding"] as const;
+export type RelationshipNodeType = (typeof RELATIONSHIP_NODE_TYPES)[number];
+
+/**
+ * How two assertions compare. This is the vocabulary that stops "different" from
+ * meaning "contradictory": a difference of amount, date, or wording is reported
+ * with its own verdict, and only incompatible assertions about the same subject
+ * are called a contradiction.
+ */
+export const COMPARISON_VERDICTS = [
+  "direct_agreement",
+  "partial_agreement",
+  "contradiction",
+  "potential_contradiction",
+  "unrelated",
+  "insufficient_information",
+] as const;
+export type ComparisonVerdict = (typeof COMPARISON_VERDICTS)[number];
+
 export const MAX_EVIDENCE_BYTES = 8 * 1024 * 1024; // 8 MB per file
 export const MAX_EVIDENCE_PER_CASE = 100;
 export const MAX_BASE64_BYTES = 12 * 1024 * 1024; // encoded payload ceiling
@@ -102,6 +150,23 @@ export const HUMAN_LABELS: Record<string, string> = {
   investigating: "Investigating",
   review: "In review",
   closed: "Closed",
+  // Relationship types
+  same_identifier: "Same identifier",
+  same_amount: "Same amount",
+  same_date: "Same date",
+  same_party: "Same party",
+  corroborates: "Corroborates",
+  contradicts: "Contradicts",
+  potential_contradiction: "Possible contradiction",
+  addresses_gap: "Fills a gap",
+  // Relationship basis
+  direct: "Direct",
+  // Comparison verdicts
+  direct_agreement: "Direct agreement",
+  partial_agreement: "Partial agreement",
+  contradiction: "Contradiction",
+  unrelated: "Unrelated",
+  insufficient_information: "Insufficient information",
 };
 
 export function label(value: string | null | undefined): string {

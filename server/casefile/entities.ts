@@ -144,6 +144,27 @@ export function detectAmounts(text: string): DetectedAmount[] {
       index: m.index ?? 0,
     });
   }
+  // A labelled amount: "Amount: 249.99", "Total 1,200.00", "Balance: 42". Real
+  // financial documents label amounts instead of writing a currency symbol next
+  // to every number, so a labelled value is read even with no symbol.
+  for (const m of text.matchAll(
+    /\b(?:amount|total|balance|fee|price|cost|charged|paid|debit|credit)\b\s*[:#]?\s*([$€£¥₹]?\s?\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?)/gi,
+  )) {
+    const raw = (m[1] ?? "").trim();
+    const symbol = raw.match(/^([$€£¥₹])/);
+    const numeric = raw.replace(/[$€£¥₹\s]/g, "");
+    if (!/^\d/.test(numeric)) continue;
+    const value = Number(numeric.replace(/,/g, ""));
+    if (!Number.isFinite(value)) continue;
+    const index = (m.index ?? 0) + m[0].indexOf(raw);
+    if (found.some((f) => f.index === index)) continue;
+    found.push({
+      text: m[0].trim(),
+      minor: Math.round(value * 100),
+      currency: symbol ? (CURRENCY_SYMBOLS[symbol[1] ?? ""] ?? null) : null,
+      index,
+    });
+  }
   return dedupeByIndex(found);
 }
 
@@ -182,4 +203,158 @@ export function normalizedDates(dates: DetectedDate[]): string[] {
 export function hasConflictingDates(dates: DetectedDate[]): boolean {
   const days = dates.filter((d) => d.precision === "day" && d.iso);
   return new Set(days.map((d) => d.iso)).size > 1;
+}
+
+export interface DetectedParty {
+  /** The name exactly as written. */
+  text: string;
+  /** The label that identified it ("Merchant", "Customer", "between", …). */
+  label: string;
+  index: number;
+}
+
+/**
+ * Labels that introduce a named party. A name is only a party when a document
+ * puts it in one of these positions, so two documents that merely share a
+ * capitalised word are not linked. This is the rule that keeps party matching
+ * from becoming "these two files mention similar words".
+ */
+const PARTY_LABELS = [
+  "merchant", "customer", "client", "buyer", "seller", "vendor", "supplier",
+  "contractor", "employer", "employee", "landlord", "tenant", "insured",
+  "insurer", "patient", "provider", "claimant", "defendant", "plaintiff",
+  "petitioner", "respondent", "appellant", "witness", "deponent", "author",
+  "publisher", "from", "to", "cc", "bcc", "account holder", "cardholder",
+  "policy holder", "policyholder", "beneficiary", "guarantor", "assignee",
+  "assignor", "licensor", "licensee", "partner", "representative",
+];
+
+const PARTY_LABEL_RE = new RegExp(
+  `\\b(${PARTY_LABELS.join("|")})\\b\\s*[:\\-–]\\s*([A-Za-z0-9][\\w&.,'’\\- ]{1,60}?)(?=\\s{2,}|[\\n;|]|$)`,
+  "gi",
+);
+
+/** "between Acme Ltd and Northwind Traders" - both sides are parties. */
+const BETWEEN_RE = /\bbetween\s+([A-Za-z0-9][\w&.,'’\- ]{1,50}?)\s+and\s+([A-Za-z0-9][\w&.,'’\- ]{1,50}?)(?=\s{2,}|[.\n;]|$)/gi;
+
+/**
+ * Finds named parties that a document explicitly introduces. Deliberately
+ * conservative: an unlabelled capitalised phrase is not returned, because a
+ * guessed name would create a relationship the evidence does not support.
+ */
+export function detectParties(text: string): DetectedParty[] {
+  const found: DetectedParty[] = [];
+  const push = (name: string, label: string, index: number) => {
+    const trimmed = name.trim().replace(/[.,;:]+$/, "").trim();
+    if (!trimmed) return;
+    // A single character or a bare role word is not a name.
+    if (trimmed.length < 2) return;
+    if (PARTY_LABELS.includes(trimmed.toLowerCase())) return;
+    found.push({ text: trimmed, label: label.toLowerCase(), index });
+  };
+
+  for (const m of text.matchAll(PARTY_LABEL_RE)) {
+    push(m[2] ?? "", m[1] ?? "", m.index ?? 0);
+  }
+  for (const m of text.matchAll(BETWEEN_RE)) {
+    push(m[1] ?? "", "between", m.index ?? 0);
+    push(m[2] ?? "", "between", (m.index ?? 0) + (m[1]?.length ?? 0));
+  }
+  return dedupeByIndex(found);
+}
+
+/**
+ * Candidate keys for a reference so the same transaction id matches across
+ * formats. The same identifier is written "Transaction ID: TXN-88421907" in a
+ * receipt and "TXN-88421907" in a CSV row, so a single normalisation is not
+ * enough: the engine produces the value with and without its leading label and
+ * matches when any candidate is shared.
+ *
+ * A candidate must be specific: it needs a letter, or at least six digits. That
+ * keeps a bare "4242" (a card's last four) from being treated as an identifier.
+ */
+export function referenceKeys(reference: DetectedReference): string[] {
+  const raw = reference.text.trim();
+  const colon = raw.indexOf(":");
+  const value = colon >= 0 ? raw.slice(colon + 1).trim() : raw;
+
+  const compact = (text: string) => text.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const candidates = new Set<string>();
+  const consider = (text: string) => {
+    const key = compact(text);
+    if (key.length < 5) return;
+    // A bare number must be long enough to be an identifier rather than a card's
+    // last four digits or a short amount.
+    if (/^\d+$/.test(key) && key.length < 6) return;
+    candidates.add(key);
+  };
+
+  consider(value);
+  // The final token, so "Order ID: ABC-123" also matches a bare "ABC-123".
+  const tokens = value.split(/[^A-Za-z0-9]+/).filter(Boolean);
+  if (tokens.length > 1) consider(tokens[tokens.length - 1] ?? "");
+
+  return [...candidates];
+}
+
+/**
+ * The most specific shared key, for display. Two documents share both
+ * "txn88421907" and its bare-numeric suffix; a reviewer should see the
+ * alphanumeric identifier, not every normalisation of it.
+ */
+export function mostSpecificKeys(keys: string[]): string[] {
+  if (keys.length <= 1) return keys;
+  const withLetters = keys.filter((key) => /[a-z]/.test(key));
+  return [...new Set(withLetters.length > 0 ? withLetters : keys)];
+}
+
+/** The minor-unit key for an amount, so $249.99 and 249.99 USD match. */
+export function amountKey(amount: DetectedAmount): string {
+  return String(amount.minor);
+}
+
+/** A stable key for a party name, tolerating case and punctuation. */
+export function partyKey(party: DetectedParty): string {
+  return party.text.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+const NEGATIONS = [
+  "not", "never", "no", "without", "didn't", "doesn't", "don't", "did not",
+  "was not", "were not", "has not", "have not", "cannot", "can't", "refused",
+  "denies", "denied", "unauthorised", "unauthorized", "unapproved",
+];
+
+/**
+ * Whether a statement denies something. Used to compare two assertions about
+ * the same subject: one asserting and one denying the same action is a
+ * contradiction, whereas two assertions that simply differ are not.
+ */
+export function hasNegation(text: string): boolean {
+  const lower = ` ${text.toLowerCase()} `;
+  return NEGATIONS.some((word) => lower.includes(` ${word} `));
+}
+
+/** Significant lowercase words, for checking two assertions share a predicate. */
+export function significantWords(text: string): Set<string> {
+  const stop = new Set([
+    "the", "a", "an", "of", "to", "and", "or", "in", "on", "at", "for", "was",
+    "were", "is", "are", "be", "been", "that", "this", "it", "as", "by", "with",
+    "from", "has", "have", "had", "not", "no", "never", "did", "does", "do",
+    "customer", "charge", "payment",
+  ]);
+  return new Set(
+    text
+      .toLowerCase()
+      .match(/[a-z][a-z0-9]{2,}/g)
+      ?.filter((word) => !stop.has(word)) ?? [],
+  );
+}
+
+/** How many significant words two texts share. */
+export function sharedWordCount(a: string, b: string): number {
+  const wa = significantWords(a);
+  const wb = significantWords(b);
+  let shared = 0;
+  for (const word of wa) if (wb.has(word)) shared += 1;
+  return shared;
 }

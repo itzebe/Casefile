@@ -6,6 +6,7 @@ import type {
   CaseStatus,
   EvidenceCategory,
 } from "@shared/casefile/types";
+import { label } from "@shared/casefile/types";
 
 import { ProvenanceBadge, ReviewBadge, StatusPill } from "@/components/casefile/badges";
 import { Button } from "@/components/ui/button";
@@ -68,6 +69,69 @@ interface InvestigationStatus {
   conflictingEvents: number;
   blockers: string[];
   nextStep: string;
+}
+
+interface CitationRef {
+  evidenceId: string;
+  passageId: string | null;
+  ref: string | null;
+  quote: string | null;
+}
+
+interface Comparison {
+  aId: string;
+  bId: string;
+  aStatement: string;
+  bStatement: string;
+  verdict: string;
+  reason: string;
+  sharedRefs: string[];
+  sharedAmounts: string[];
+  sharedParties: string[];
+  aCitations: CitationRef[];
+  bCitations: CitationRef[];
+}
+
+interface Relationship {
+  id: string;
+  fromType: string;
+  fromId: string;
+  toType: string;
+  toId: string;
+  relationType: string;
+  basis: string;
+  matchKey: string | null;
+  sourcePassageId: string | null;
+  rationale: string;
+  confidence: string | null;
+  reviewStatus: string;
+  createdBy: string;
+}
+
+interface Gap {
+  id: string;
+  kind: string;
+  missing: string;
+  affectsFindingId: string | null;
+  affectsStatement: string | null;
+  whyItMatters: string;
+  whatWouldHelp: string;
+  relatedEvidenceIds: string[];
+}
+
+interface GraphResult {
+  counts: {
+    passages: number;
+    documents: number;
+    relationships: number;
+    contradictions: number;
+    potentialContradictions: number;
+    agreements: number;
+    gaps: number;
+  };
+  relationships: Relationship[];
+  comparisons: Comparison[];
+  gaps: Gap[];
 }
 
 interface CaseDetail {
@@ -324,6 +388,277 @@ function FindingCard({
   );
 }
 
+const VERDICT_STYLE: Record<string, string> = {
+  contradiction: "border-destructive/50 bg-destructive/5",
+  potential_contradiction: "border-amber-600/40 bg-amber-500/5",
+  direct_agreement: "border-emerald-600/40 bg-emerald-500/5",
+  partial_agreement: "border-border",
+  insufficient_information: "border-dashed border-border",
+};
+
+/**
+ * The cross-document investigation view.
+ *
+ * This is the panel that makes CASEFILE more than a set of document summaries:
+ * it shows what connects the case's documents, where their assertions agree or
+ * conflict, and what the record is still missing. Every relationship shows the
+ * identifier it matched on and, where there is one, the passage it came from, so
+ * a reviewer can check the link instead of trusting a score.
+ */
+function CrossDocumentPanel({
+  graph,
+  onBuild,
+  building,
+  onReviewRelationship,
+  onSelectEvidence,
+}: {
+  graph: GraphResult | null;
+  onBuild: () => void;
+  building: boolean;
+  onReviewRelationship: (relationshipId: string, reviewStatus: "confirmed" | "rejected") => void;
+  onSelectEvidence: (evidenceId: string, passageId: string | null) => void;
+}) {
+  const counts = graph?.counts;
+  const comparisons = graph?.comparisons ?? [];
+  const relationships = graph?.relationships ?? [];
+  const gaps = graph?.gaps ?? [];
+
+  const contradictory = comparisons.filter(
+    (c) => c.verdict === "contradiction" || c.verdict === "potential_contradiction",
+  );
+  const agreements = comparisons.filter(
+    (c) => c.verdict === "direct_agreement" || c.verdict === "partial_agreement",
+  );
+
+  return (
+    <section className="mb-6" data-testid="cross-document-panel">
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-medium">Across documents</h2>
+          <p className="text-sm text-muted-foreground">
+            What connects these documents, where they agree or conflict, and what is still
+            missing. Links are drawn only from shared identifiers, amounts, parties, and dates.
+          </p>
+        </div>
+        <Button variant="outline" onClick={onBuild} disabled={building}>
+          {building ? "Connecting…" : "Connect the documents"}
+        </Button>
+      </div>
+
+      {!graph ? (
+        <Card>
+          <CardContent className="pt-6 text-sm text-muted-foreground">
+            Run the connection to compare this case&apos;s documents against each other.
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+            <span>
+              {counts?.documents ?? 0} document{(counts?.documents ?? 0) === 1 ? "" : "s"} ·{" "}
+              {counts?.passages ?? 0} passage{(counts?.passages ?? 0) === 1 ? "" : "s"}
+            </span>
+            <span>{counts?.relationships ?? 0} relationship{(counts?.relationships ?? 0) === 1 ? "" : "s"}</span>
+            <span className={(counts?.contradictions ?? 0) > 0 ? "font-medium text-destructive" : undefined}>
+              {counts?.contradictions ?? 0} contradiction{(counts?.contradictions ?? 0) === 1 ? "" : "s"}
+            </span>
+            <span>{counts?.agreements ?? 0} agreement{(counts?.agreements ?? 0) === 1 ? "" : "s"}</span>
+            <span>{counts?.gaps ?? 0} gap{(counts?.gaps ?? 0) === 1 ? "" : "s"}</span>
+          </div>
+
+          <div>
+            <h3 className="mb-2 text-sm font-medium">Conflicting and unresolved assertions</h3>
+            {contradictory.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No assertions in this case conflict across documents.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {contradictory.map((comparison) => (
+                  <div
+                    key={`${comparison.aId}-${comparison.bId}`}
+                    className={cn(
+                      "rounded-lg border p-3",
+                      VERDICT_STYLE[comparison.verdict] ?? "border-border",
+                    )}
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-medium uppercase tracking-wide">
+                        {label(comparison.verdict)}
+                      </span>
+                      {comparison.sharedRefs.length > 0 ? (
+                        <span className="text-xs text-muted-foreground">
+                          shared reference: {comparison.sharedRefs.join(", ")}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                      <ComparisonSide
+                        statement={comparison.aStatement}
+                        citations={comparison.aCitations}
+                        onSelectEvidence={onSelectEvidence}
+                      />
+                      <ComparisonSide
+                        statement={comparison.bStatement}
+                        citations={comparison.bCitations}
+                        onSelectEvidence={onSelectEvidence}
+                      />
+                    </div>
+                    <p className="mt-2 text-xs text-muted-foreground">{comparison.reason}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {agreements.length > 0 ? (
+            <div>
+              <h3 className="mb-2 text-sm font-medium">Assertions that agree</h3>
+              <ul className="space-y-1 text-sm">
+                {agreements.map((comparison) => (
+                  <li key={`${comparison.aId}-${comparison.bId}`} className="text-muted-foreground">
+                    <span className="text-foreground">{comparison.aStatement}</span> and{" "}
+                    <span className="text-foreground">{comparison.bStatement}</span> — {comparison.reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {gaps.length > 0 ? (
+            <div>
+              <h3 className="mb-2 text-sm font-medium">What the record does not yet establish</h3>
+              <div className="space-y-2">
+                {gaps.map((gap) => (
+                  <div key={gap.id} className="rounded-lg border border-dashed border-border p-3">
+                    <p className="text-sm font-medium">{gap.missing}</p>
+                    {gap.affectsStatement ? (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Affects: {gap.affectsStatement}
+                      </p>
+                    ) : null}
+                    <p className="mt-1 text-xs text-muted-foreground">{gap.whyItMatters}</p>
+                    <p className="mt-1 text-xs">
+                      <span className="font-medium">Would help: </span>
+                      {gap.whatWouldHelp}
+                    </p>
+                    {gap.relatedEvidenceIds.length > 0 ? (
+                      <button
+                        type="button"
+                        className="mt-1 text-xs underline"
+                        onClick={() => onSelectEvidence(gap.relatedEvidenceIds[0]!, null)}
+                      >
+                        Go to the related document
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <div>
+            <h3 className="mb-2 text-sm font-medium">
+              Relationships ({relationships.length})
+            </h3>
+            {relationships.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No relationships were found between these documents.
+              </p>
+            ) : (
+              <div className="space-y-1">
+                {relationships.map((relationship) => (
+                  <div
+                    key={relationship.id}
+                    className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-border px-3 py-2 text-xs"
+                  >
+                    <span className="font-medium">{label(relationship.relationType)}</span>
+                    <span className="text-muted-foreground">{relationship.basis}</span>
+                    {relationship.matchKey ? (
+                      <span className="text-muted-foreground">matched on {relationship.matchKey}</span>
+                    ) : null}
+                    <span className="text-muted-foreground">{relationship.rationale}</span>
+                    {relationship.sourcePassageId ? (
+                      <button
+                        type="button"
+                        className="underline"
+                        onClick={() =>
+                          onSelectEvidence(
+                            relationship.fromType === "passage"
+                              ? relationship.fromId
+                              : relationship.sourcePassageId!,
+                            relationship.sourcePassageId,
+                          )
+                        }
+                      >
+                        source
+                      </button>
+                    ) : null}
+                    <span className="ms-auto flex items-center gap-2">
+                      <ReviewBadge value={relationship.reviewStatus} />
+                      {relationship.reviewStatus !== "confirmed" ? (
+                        <button
+                          type="button"
+                          className="underline"
+                          onClick={() => onReviewRelationship(relationship.id, "confirmed")}
+                        >
+                          Confirm
+                        </button>
+                      ) : null}
+                      {relationship.reviewStatus !== "rejected" ? (
+                        <button
+                          type="button"
+                          className="underline"
+                          onClick={() => onReviewRelationship(relationship.id, "rejected")}
+                        >
+                          Dismiss
+                        </button>
+                      ) : null}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ComparisonSide({
+  statement,
+  citations,
+  onSelectEvidence,
+}: {
+  statement: string;
+  citations: CitationRef[];
+  onSelectEvidence: (evidenceId: string, passageId: string | null) => void;
+}) {
+  return (
+    <div className="rounded-md border border-border/60 bg-background/50 p-2">
+      <p className="text-sm">{statement}</p>
+      <div className="mt-1 space-y-1">
+        {citations.length === 0 ? (
+          <p className="text-xs text-amber-700 dark:text-amber-400">No cited source.</p>
+        ) : (
+          citations.map((citation, index) => (
+            <button
+              key={`${citation.evidenceId}-${citation.passageId ?? index}`}
+              type="button"
+              className="block w-full text-start text-xs text-muted-foreground underline decoration-dotted"
+              onClick={() => onSelectEvidence(citation.evidenceId, citation.passageId)}
+            >
+              {citation.ref ?? "source"}
+              {citation.quote ? `: “${citation.quote}”` : ""}
+            </button>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function CaseWorkspace({ caseId }: { caseId: string }) {
   const fileInput = useRef<HTMLInputElement>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -338,11 +673,42 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
     { caseId },
   );
 
+  const [graph, setGraph] = useState<GraphResult | null>(null);
+  const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null);
+  const [selectedPassageId, setSelectedPassageId] = useState<string | null>(null);
+  const passageView = useActionQuery<{
+    evidence: { id: string; filename: string; extractionStatus: string };
+    passages: Array<{ id: string; ref: string; text: string; locatorType: string; locatorValue: number | null }>;
+  }>(
+    "get-evidence",
+    { caseId, evidenceId: selectedEvidenceId ?? "", includeBytes: false },
+    { enabled: Boolean(selectedEvidenceId) },
+  );
+
   const invalidate = () => {
     void detail.refetch();
     void status.refetch();
     void timeline.refetch();
   };
+
+  const buildGraph = useActionMutation("build-case-graph", {
+    onSuccess: (result: GraphResult) => {
+      setGraph(result);
+      setNotice(
+        `Connected ${result.counts.documents} document(s): ${result.counts.relationships} relationship(s), ` +
+          `${result.counts.contradictions} contradiction(s), ${result.counts.gaps} gap(s).`,
+      );
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  const reviewRelationship = useActionMutation("update-relationship", {
+    onSuccess: () => {
+      // Rebuild so the reviewed edge's status is reflected from the stored record.
+      buildGraph.mutate({ caseId, persist: true });
+    },
+    onError: (err: Error) => setError(err.message),
+  });
 
   const upload = useActionMutation("upload-evidence", {
     onSuccess: (result: { duplicate?: boolean; message?: string; filename?: string }) => {
@@ -613,6 +979,68 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
           </span>
         </div>
       </section>
+
+      <CrossDocumentPanel
+        graph={graph}
+        building={buildGraph.isPending}
+        onBuild={() => buildGraph.mutate({ caseId, persist: true })}
+        onReviewRelationship={(relationshipId, reviewStatus) =>
+          reviewRelationship.mutate({ caseId, relationshipId, reviewStatus })
+        }
+        onSelectEvidence={(evidenceId, passageId) => {
+          setSelectedEvidenceId(evidenceId);
+          setSelectedPassageId(passageId);
+        }}
+      />
+
+      {selectedEvidenceId ? (
+        <section className="mb-6" data-testid="passage-viewer">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-lg font-medium">
+              {passageView.data?.evidence.filename ?? "Source document"}
+            </h2>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setSelectedEvidenceId(null);
+                setSelectedPassageId(null);
+              }}
+            >
+              Close
+            </Button>
+          </div>
+          <p className="mb-3 text-sm text-muted-foreground">
+            The passages a finding or relationship cites, with their exact locators.
+          </p>
+          <div className="space-y-2">
+            {passageView.isPending ? (
+              <p className="text-sm text-muted-foreground">Loading passages…</p>
+            ) : (passageView.data?.passages.length ?? 0) === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                This document has no extracted text passages.
+              </p>
+            ) : (
+              passageView.data?.passages.map((passage) => (
+                <blockquote
+                  key={passage.id}
+                  className={cn(
+                    "rounded-md border p-3 text-sm",
+                    passage.id === selectedPassageId
+                      ? "border-primary bg-primary/5"
+                      : "border-border",
+                  )}
+                >
+                  <span className="mb-1 block text-xs font-medium text-muted-foreground">
+                    {passage.ref}
+                  </span>
+                  {passage.text}
+                </blockquote>
+              ))
+            )}
+          </div>
+        </section>
+      ) : null}
 
       <section className="mb-6">
         <h2 className="text-lg font-medium">Timeline</h2>

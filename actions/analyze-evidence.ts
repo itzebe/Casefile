@@ -5,10 +5,10 @@ import { z } from "zod";
 import { recordAudit, requireOwnedCase } from "../server/casefile/access.js";
 import { casefileContext } from "../server/casefile/context.js";
 import { touchCase } from "../server/casefile/case-queries.js";
-import { newCitationId, newFindingId } from "../server/casefile/ids.js";
 import { getDb } from "../server/db/index.js";
 import * as schema from "../server/db/schema.js";
 import { analyzeCaseEvidence } from "../server/casefile/analysis.js";
+import { persistAnalysis } from "../server/casefile/analysis-persistence.js";
 
 /**
  * Runs the investigation model over a case's extracted evidence and records
@@ -65,102 +65,13 @@ export default defineAction({
       signal: ctx?.signal,
     });
 
-    if (args.replaceUnreviewed) {
-      // Reviewed rows (confirmed or rejected) are the user's decisions and are
-      // preserved; only untouched proposals are replaced.
-      const previous = await db
-        .select({ id: schema.findings.id })
-        .from(schema.findings)
-        .where(
-          and(
-            eq(schema.findings.caseId, ownedCase.id),
-            eq(schema.findings.reviewStatus, "proposed"),
-          ),
-        );
-      for (const finding of previous) {
-        await db
-          .delete(schema.findingCitations)
-          .where(eq(schema.findingCitations.findingId, finding.id));
-        await db.delete(schema.findings).where(eq(schema.findings.id, finding.id));
-      }
-    }
-
-    const insertFinding = async (input: {
-      kind: "claim" | "event";
-      statement: string;
-      provenance: string;
-      confidence: string | null;
-      uncertainty: string | null;
-      citations: Array<{ evidenceId: string; passageId: string | null; quote: string | null }>;
-      eventDate?: string | null;
-      eventDateText?: string | null;
-      datePrecision?: string | null;
-      dateConflict?: boolean;
-    }): Promise<string> => {
-      const id = newFindingId();
-      await db.insert(schema.findings).values({
-        id,
-        caseId: ownedCase.id,
-        ownerEmail: userEmail,
-        kind: input.kind,
-        statement: input.statement,
-        provenance: input.provenance,
-        reviewStatus: "proposed",
-        eventDate: input.eventDate ?? null,
-        eventDateText: input.eventDateText ?? null,
-        datePrecision: input.datePrecision ?? null,
-        dateConflict: input.dateConflict ?? false,
-        confidence: input.confidence,
-        uncertainty: input.uncertainty,
-        extractionMethod: input.provenance,
-      });
-      if (input.citations.length > 0) {
-        await db.insert(schema.findingCitations).values(
-          input.citations.map((citation) => ({
-            id: newCitationId(),
-            findingId: id,
-            evidenceId: citation.evidenceId,
-            passageId: citation.passageId,
-            caseId: ownedCase.id,
-            ownerEmail: userEmail,
-            quote: citation.quote,
-          })),
-        );
-      }
-      return id;
-    };
-
-    const claimIds: string[] = [];
-    for (const claim of analysis.claims) {
-      claimIds.push(
-        await insertFinding({
-          kind: "claim",
-          statement: claim.statement,
-          provenance: claim.provenance,
-          confidence: claim.confidence,
-          uncertainty: claim.uncertainty,
-          citations: claim.citations,
-        }),
-      );
-    }
-
-    const eventIds: string[] = [];
-    for (const event of analysis.events) {
-      eventIds.push(
-        await insertFinding({
-          kind: "event",
-          statement: event.description,
-          provenance: event.citations.length > 0 ? "documented" : "unverified",
-          confidence: event.confidence,
-          uncertainty: event.uncertainty,
-          citations: event.citations,
-          eventDate: event.dateIso,
-          eventDateText: event.dateText,
-          datePrecision: event.datePrecision,
-          dateConflict: event.dateConflict,
-        }),
-      );
-    }
+    const persisted = await persistAnalysis({
+      caseId: ownedCase.id,
+      ownerEmail: userEmail,
+      analysis,
+      replaceUnreviewed: args.replaceUnreviewed,
+    });
+    const { claimIds, eventIds } = persisted;
 
     await touchCase(ownedCase.id, userEmail);
     await recordAudit({

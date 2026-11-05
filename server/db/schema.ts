@@ -228,3 +228,61 @@ export const auditLog = pgTable(
   },
   (table) => [index("casefile_audit_case_idx").on(table.caseId, table.createdAt)],
 );
+
+/**
+ * Cross-document relationships (Mission 3).
+ *
+ * An edge connects two nodes in the same case, each named by `type` + `id`:
+ *   evidence | passage | finding
+ *
+ * Two properties keep this honest:
+ *
+ *  - `basis` records whether the edge is `direct` (the two sides literally share
+ *    an explicit identifier) or `inferred` (the engine joined them through a
+ *    normalised value). An inferred edge is weaker and is shown as such.
+ *  - `matchKey` is the exact identifier or value the engine matched on, so a
+ *    reviewer can see why two documents were linked instead of trusting a score.
+ *
+ * `sourcePassageId` is the passage the edge was derived from, so every
+ * relationship can be navigated back to a real position in a real file. A
+ * relationship is never created from word overlap alone.
+ */
+export const relationships = pgTable(
+  "casefile_relationships",
+  {
+    id: text("id").primaryKey(),
+    caseId: text("case_id").notNull(),
+    ownerEmail: text("owner_email").notNull(),
+    fromType: text("from_type").notNull(),
+    fromId: text("from_id").notNull(),
+    toType: text("to_type").notNull(),
+    toId: text("to_id").notNull(),
+    // RelationshipType, e.g. same_identifier | contradicts | corroborates.
+    relationType: text("relation_type").notNull(),
+    // direct | inferred
+    basis: text("basis").notNull().default("direct"),
+    // The identifier, amount, date, or name the two sides share.
+    matchKey: text("match_key"),
+    // The passage the relationship was derived from, for navigation.
+    sourcePassageId: text("source_passage_id"),
+    // Short, non-sensitive explanation of why the two sides are related.
+    rationale: text("rationale").notNull().default(""),
+    // high | medium | low, only when meaningful (an inferred edge).
+    confidence: text("confidence"),
+    // proposed | confirmed | rejected - a human can confirm or dismiss an edge.
+    reviewStatus: text("review_status").notNull().default("proposed"),
+    // engine (deterministic) | agent (model-proposed) - how the edge was made.
+    createdBy: text("created_by").notNull().default("engine"),
+    correctedBy: text("corrected_by"),
+    correctedAt: text("corrected_at"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => [
+    index("casefile_relationships_case_idx").on(table.caseId, table.relationType),
+    index("casefile_relationships_from_idx").on(table.fromType, table.fromId),
+    index("casefile_relationships_to_idx").on(table.toType, table.toId),
+    index("casefile_relationships_owner_idx").on(table.ownerEmail),
+  ],
+);

@@ -129,4 +129,38 @@ export const MIGRATIONS: MigrationEntry[] = [
           ON casefile_audit_log (case_id, created_at);
       `,
     },
+    {
+      version: 2,
+      name: "casefile-cross-document-relationships",
+      sql: `
+        CREATE TABLE IF NOT EXISTS casefile_relationships (
+          id TEXT PRIMARY KEY,
+          case_id TEXT NOT NULL,
+          owner_email TEXT NOT NULL,
+          from_type TEXT NOT NULL,
+          from_id TEXT NOT NULL,
+          to_type TEXT NOT NULL,
+          to_id TEXT NOT NULL,
+          relation_type TEXT NOT NULL,
+          basis TEXT NOT NULL DEFAULT 'direct',
+          match_key TEXT,
+          source_passage_id TEXT,
+          rationale TEXT NOT NULL DEFAULT '',
+          confidence TEXT,
+          review_status TEXT NOT NULL DEFAULT 'proposed',
+          created_by TEXT NOT NULL DEFAULT 'engine',
+          corrected_by TEXT,
+          corrected_at TIMESTAMPTZ,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS casefile_relationships_case_idx
+          ON casefile_relationships (case_id, relation_type);
+        CREATE INDEX IF NOT EXISTS casefile_relationships_from_idx
+          ON casefile_relationships (from_type, from_id);
+        CREATE INDEX IF NOT EXISTS casefile_relationships_to_idx
+          ON casefile_relationships (to_type, to_id);
+        CREATE INDEX IF NOT EXISTS casefile_relationships_owner_idx
+          ON casefile_relationships (owner_email);
+      `,
+    },
   ];
