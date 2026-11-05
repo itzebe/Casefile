@@ -10,6 +10,8 @@
  * a claim built on it can be traced back to a position in the original file.
  */
 
+import { extractDocx, extractMarkdown, extractXlsx } from "./ooxml.js";
+
 export type LocatorType = "page" | "row" | "chunk" | "document";
 
 export interface ExtractedPassage {
@@ -308,8 +310,14 @@ export async function extractEvidence(input: {
       return extractPdfFile(input.data);
     case "text/plain":
       return extractTextFile(input.data);
+    case "text/markdown":
+      return extractMarkdown(input.data);
     case "text/csv":
       return extractCsvFile(input.data);
+    case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+      return extractDocx(input.data);
+    case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+      return extractXlsx(input.data);
     case "image/png":
     case "image/jpeg":
       return extractImageFile(input.data, input.mimeType);

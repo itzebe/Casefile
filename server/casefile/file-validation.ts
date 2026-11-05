@@ -2,9 +2,11 @@ import { createHash } from "node:crypto";
 
 import {
   MAX_EVIDENCE_BYTES,
+  SUPPORTED_FORMAT_LABELS,
   SUPPORTED_MIME_TYPES,
   type SupportedMimeType,
 } from "../../shared/casefile/types.js";
+import { openZip } from "./zip.js";
 
 /**
  * File validation.
@@ -38,10 +40,34 @@ export function detectMimeType(data: Uint8Array): SupportedMimeType | null {
   if (startsWith(data, [0x25, 0x50, 0x44, 0x46, 0x2d])) return "application/pdf"; // %PDF-
   if (startsWith(data, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return "image/png";
   if (startsWith(data, [0xff, 0xd8, 0xff])) return "image/jpeg";
+  // PK\x03\x04 - a ZIP container. DOCX and XLSX are both ZIPs, so the specific
+  // type is decided by inspecting the parts, not by the extension.
+  if (startsWith(data, [0x50, 0x4b, 0x03, 0x04])) return detectOoxmlType(data);
   return null;
 }
 
-const TEXT_EXTENSIONS = [".txt", ".text", ".log", ".md"];
+/**
+ * Distinguishes a Word document from an Excel workbook by the parts inside the
+ * ZIP. An archive that is neither (or is unreadable) is rejected rather than
+ * guessed at, so a renamed .zip cannot enter as a document.
+ */
+function detectOoxmlType(data: Uint8Array): SupportedMimeType | null {
+  try {
+    const zip = openZip(data);
+    if (zip.names.includes("word/document.xml")) {
+      return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    }
+    if (zip.names.some((name) => /^xl\/worksheets\/sheet\d+\.xml$/.test(name))) {
+      return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+const TEXT_EXTENSIONS = [".txt", ".text", ".log"];
+const MARKDOWN_EXTENSIONS = [".md", ".markdown"];
 const CSV_EXTENSIONS = [".csv", ".tsv"];
 
 function extensionOf(filename: string): string {
@@ -74,6 +100,7 @@ function classifyTextLike(
   if (!decodable) return null;
   const extension = extensionOf(filename);
   if (CSV_EXTENSIONS.includes(extension)) return "text/csv";
+  if (MARKDOWN_EXTENSIONS.includes(extension)) return "text/markdown";
   if (TEXT_EXTENSIONS.includes(extension)) return "text/plain";
   // No recognised extension: a comma-and-newline shape is CSV, otherwise text.
   const head = new TextDecoder("utf-8").decode(sample);
@@ -105,12 +132,11 @@ export function validateEvidenceFile(input: {
     detectMimeType(data) ?? classifyTextLike(data, filename) ?? null;
 
   if (!detected) {
+    const formats = SUPPORTED_MIME_TYPES.map((type) => SUPPORTED_FORMAT_LABELS[type]).join(", ");
     return {
       ok: false,
       code: "unsupported_type",
-      message: `The file is not one of the supported types (${SUPPORTED_MIME_TYPES.join(
-        ", ",
-      )}). Its contents did not match any of them.`,
+      message: `The file's contents did not match any supported format (${formats}). If this is a different format, convert it to PDF or text first.`,
     };
   }
 

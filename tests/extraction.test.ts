@@ -3,8 +3,26 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { detectAmounts, detectDates, detectReferences, hasConflictingDates } from "../server/casefile/entities.js";
-import { extractCsvFile, extractImageFile, extractPdfFile, extractTextFile } from "../server/casefile/extraction.js";
-import { RECEIPT_TEXT, STATEMENT_CSV, CONTRACT_TEXT, pdfBytes, textBytes, csvBytes } from "./fixtures/evidence.js";
+import {
+  extractCsvFile,
+  extractEvidence,
+  extractImageFile,
+  extractPdfFile,
+  extractTextFile,
+} from "../server/casefile/extraction.js";
+import { detectMimeType, validateEvidenceFile } from "../server/casefile/file-validation.js";
+import {
+  RECEIPT_TEXT,
+  STATEMENT_CSV,
+  CONTRACT_TEXT,
+  MARKDOWN_TEXT,
+  docxBytes,
+  pdfBytes,
+  textBytes,
+  csvBytes,
+  xlsxBytes,
+  zipBytes,
+} from "./fixtures/evidence.js";
 
 describe("detectDates", () => {
   it("parses an unambiguous ISO date", () => {
@@ -152,5 +170,145 @@ describe("extractImageFile (OCR)", () => {
     const result = await extractImageFile(pngBytes(), "image/png");
     expect(result.status).toBe("unsupported");
     expect(result.limitation).toMatch(/no readable text/i);
+  });
+});
+
+describe("DOCX extraction", () => {
+  it("returns one passage per paragraph, located by paragraph number", async () => {
+    const bytes = docxBytes(["SERVICE AGREEMENT", "", "The customer shall pay 1,200.00 USD per month."]);
+    const result = await extractEvidence({
+      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      filename: "agreement.docx",
+      data: bytes,
+    });
+    expect(result.status).toBe("complete");
+    // The empty paragraph is dropped rather than emitted as a blank passage.
+    expect(result.passages).toHaveLength(2);
+    expect(result.passages[0]).toMatchObject({ ref: "paragraph 1", text: "SERVICE AGREEMENT" });
+    expect(result.passages[1]!.text).toContain("1,200.00 USD");
+  });
+
+  it("decodes XML entities rather than leaking them into the text", async () => {
+    const bytes = docxBytes(["Smith & Co. <Terms> \"quoted\""]);
+    const result = await extractEvidence({
+      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      filename: "entities.docx",
+      data: bytes,
+    });
+    expect(result.passages[0]!.text).toBe('Smith & Co. <Terms> "quoted"');
+  });
+
+  it("reports a corrupt container as failed, not as an empty document", async () => {
+    const result = await extractEvidence({
+      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      filename: "broken.docx",
+      data: new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4]),
+    });
+    expect(result.status).toBe("failed");
+    expect(result.error).toBeTruthy();
+    expect(result.passages).toHaveLength(0);
+  });
+});
+
+describe("XLSX extraction", () => {
+  it("returns one passage per row, located by sheet and row number", async () => {
+    const bytes = xlsxBytes("Statement", [
+      ["date", "description", "amount"],
+      ["2024-03-15", "Northwind Traders", "249.99"],
+    ]);
+    const result = await extractEvidence({
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      filename: "statement.xlsx",
+      data: bytes,
+    });
+    expect(result.status).toBe("complete");
+    expect(result.passages[0]!.ref).toBe("Statement row 1");
+    expect(result.passages[1]!.ref).toBe("Statement row 2");
+    expect(result.passages[1]!.text).toContain("249.99");
+    // Cells are labelled by column letter so a row reads unambiguously.
+    expect(result.passages[1]!.text).toContain("C: 249.99");
+  });
+
+  it("reports a workbook with no sheets as failed", async () => {
+    const bytes = zipBytes([
+      { name: "[Content_Types].xml", content: "<Types/>" },
+      { name: "xl/workbook.xml", content: "<workbook/>" },
+    ]);
+    const result = await extractEvidence({
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      filename: "empty.xlsx",
+      data: bytes,
+    });
+    expect(result.status).toBe("failed");
+  });
+});
+
+describe("Markdown extraction", () => {
+  it("splits on headings so a citation names the section", async () => {
+    const result = await extractEvidence({
+      mimeType: "text/markdown",
+      filename: "notes.md",
+      data: textBytes(MARKDOWN_TEXT),
+    });
+    expect(result.status).toBe("complete");
+    expect(result.passages.length).toBeGreaterThanOrEqual(2);
+    expect(result.passages[0]!.ref).toMatch(/section 1/);
+  });
+});
+
+describe("format detection", () => {
+  it("detects a DOCX from its container parts, not its extension", () => {
+    const bytes = docxBytes(["hello"]);
+    expect(detectMimeType(bytes)).toBe(
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    );
+  });
+
+  it("detects an XLSX from its container parts", () => {
+    const bytes = xlsxBytes("Sheet1", [["a"]]);
+    expect(detectMimeType(bytes)).toBe(
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+  });
+
+  it("rejects a plain ZIP that is not an OOXML document", () => {
+    const bytes = zipBytes([{ name: "readme.txt", content: "not a document" }]);
+    const result = validateEvidenceFile({ filename: "archive.zip", data: bytes });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("unsupported_type");
+  });
+
+  it("rejects a binary renamed to .docx", () => {
+    const header = new Uint8Array(64);
+    header.set([0x4d, 0x5a, 0x90, 0x00], 0); // MZ
+    const result = validateEvidenceFile({ filename: "invoice.docx", data: header });
+    expect(result.ok).toBe(false);
+  });
+
+  it("classifies .md as markdown and .txt as plain text", () => {
+    const md = validateEvidenceFile({ filename: "notes.md", data: textBytes("# Title\n\nbody") });
+    expect(md.ok && md.mimeType).toBe("text/markdown");
+    const txt = validateEvidenceFile({ filename: "notes.txt", data: textBytes("body only") });
+    expect(txt.ok && txt.mimeType).toBe("text/plain");
+  });
+});
+
+describe("ZIP safety", () => {
+  it("refuses a compression bomb instead of inflating it", async () => {
+    // 5 MB of zeros compresses to a few KB; the ratio guard must reject it.
+    const bomb = "0".repeat(5 * 1024 * 1024);
+    const bytes = zipBytes([{ name: "word/document.xml", content: bomb }]);
+    const result = await extractEvidence({
+      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      filename: "bomb.docx",
+      data: bytes,
+    });
+    expect(result.status).toBe("failed");
+    expect(result.error).toMatch(/ratio|budget|limit/i);
+  });
+
+  it("rejects a non-ZIP payload that claims to be a ZIP", () => {
+    const fake = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00]);
+    expect(detectMimeType(fake)).toBeNull();
   });
 });

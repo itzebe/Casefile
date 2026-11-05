@@ -1,4 +1,4 @@
-import { deflateSync } from "node:zlib";
+import { deflateRawSync, deflateSync } from "node:zlib";
 
 /**
  * Synthetic evidence fixtures.
@@ -197,3 +197,172 @@ export function truncatedPng(): Uint8Array {
 export function invalidUtf8Bytes(): Uint8Array {
   return new Uint8Array([0xff, 0xfe, 0x41, 0x00, 0xff, 0xff, 0x80, 0x81, 0x82]);
 }
+
+/**
+ * A minimal but genuine ZIP writer (stored + deflate entries) used to build
+ * DOCX and XLSX fixtures. Written here so the repository checks in no binary
+ * blobs and each test states exactly what the container holds.
+ */
+function crc32(data: Uint8Array): number {
+  let table = crcTableCache;
+  if (!table) {
+    table = new Uint32Array(256);
+    for (let n = 0; n < 256; n += 1) {
+      let c = n;
+      for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      table[n] = c >>> 0;
+    }
+    crcTableCache = table;
+  }
+  let c = 0xffffffff;
+  for (const byte of data) c = table[(c ^ byte) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+let crcTableCache: Uint32Array | null = null;
+
+function zipEntry(name: string, content: Uint8Array, method: "store" | "deflate"): Uint8Array {
+  const nameBytes = new TextEncoder().encode(name);
+  const crc = crc32(content);
+  const payload = method === "deflate" ? new Uint8Array(deflateRawSync(content)) : content;
+  const local = new Uint8Array(30 + nameBytes.length + payload.length);
+  const localView = new DataView(local.buffer);
+  localView.setUint32(0, 0x04034b50, true);
+  localView.setUint16(4, 20, true); // version needed
+  localView.setUint16(6, 0, true); // flags
+  localView.setUint16(8, method === "deflate" ? 8 : 0, true);
+  localView.setUint32(14, crc, true);
+  localView.setUint32(18, payload.length, true);
+  localView.setUint32(22, content.length, true);
+  localView.setUint16(26, nameBytes.length, true);
+  localView.setUint16(28, 0, true);
+  local.set(nameBytes, 30);
+  local.set(payload, 30 + nameBytes.length);
+  return local;
+}
+
+export function zipBytes(entries: Array<{ name: string; content: string; method?: "store" | "deflate" }>): Uint8Array {
+  const encoder = new TextEncoder();
+  const localParts: Uint8Array[] = [];
+  const centralParts: Uint8Array[] = [];
+  let offset = 0;
+
+  for (const entry of entries) {
+    const content = encoder.encode(entry.content);
+    const method = entry.method ?? "deflate";
+    const local = zipEntry(entry.name, content, method);
+    localParts.push(local);
+
+    const nameBytes = encoder.encode(entry.name);
+    const central = new Uint8Array(46 + nameBytes.length);
+    const view = new DataView(central.buffer);
+    view.setUint32(0, 0x02014b50, true);
+    view.setUint16(4, 20, true);
+    view.setUint16(6, 20, true);
+    view.setUint16(8, 0, true);
+    view.setUint16(10, method === "deflate" ? 8 : 0, true);
+    view.setUint32(16, crc32(content), true);
+    view.setUint32(20, method === "deflate" ? new Uint8Array(deflateRawSync(content)).length : content.length, true);
+    view.setUint32(24, content.length, true);
+    view.setUint16(28, nameBytes.length, true);
+    view.setUint32(42, offset, true);
+    central.set(nameBytes, 46);
+    centralParts.push(central);
+
+    offset += local.length;
+  }
+
+  const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
+  const eocd = new Uint8Array(22);
+  const eocdView = new DataView(eocd.buffer);
+  eocdView.setUint32(0, 0x06054b50, true);
+  eocdView.setUint16(8, entries.length, true);
+  eocdView.setUint16(10, entries.length, true);
+  eocdView.setUint32(12, centralSize, true);
+  eocdView.setUint32(16, offset, true);
+
+  const parts = [...localParts, ...centralParts, eocd];
+  const total = parts.reduce((sum, part) => sum + part.length, 0);
+  const out = new Uint8Array(total);
+  let cursor = 0;
+  for (const part of parts) {
+    out.set(part, cursor);
+    cursor += part.length;
+  }
+  return out;
+}
+
+const DOCX_CONTENT_TYPES =
+  `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+  `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
+  `<Default Extension="xml" ContentType="application/xml"/>` +
+  `<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>` +
+  `</Types>`;
+
+/** Builds a .docx whose body is the given paragraphs (blank string = empty para). */
+export function docxBytes(paragraphs: string[]): Uint8Array {
+  const body = paragraphs
+    .map((text) => {
+      const escaped = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      return `<w:p><w:r><w:t xml:space="preserve">${escaped}</w:t></w:r></w:p>`;
+    })
+    .join("");
+  const document =
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+    `<w:body>${body}</w:body></w:document>`;
+  return zipBytes([
+    { name: "[Content_Types].xml", content: DOCX_CONTENT_TYPES },
+    { name: "word/document.xml", content: document },
+  ]);
+}
+
+/** Builds a .xlsx with one sheet of inline-string rows. */
+export function xlsxBytes(sheetName: string, rows: string[][]): Uint8Array {
+  const sheetRows = rows
+    .map((cells, rowIndex) => {
+      const rendered = cells
+        .map((value, colIndex) => {
+          const column = String.fromCharCode(65 + colIndex);
+          const escaped = value
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+          return `<c r="${column}${rowIndex + 1}" t="inlineStr"><is><t>${escaped}</t></is></c>`;
+        })
+        .join("");
+      return `<row r="${rowIndex + 1}">${rendered}</row>`;
+    })
+    .join("");
+  const sheet =
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
+    `<sheetData>${sheetRows}</sheetData></worksheet>`;
+  const workbook =
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ` +
+    `xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
+    `<sheets><sheet name="${sheetName}" sheetId="1" r:id="rId1"/></sheets></workbook>`;
+  const rels =
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+    `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>` +
+    `</Relationships>`;
+  return zipBytes([
+    { name: "[Content_Types].xml", content: DOCX_CONTENT_TYPES },
+    { name: "xl/workbook.xml", content: workbook },
+    { name: "xl/_rels/workbook.xml.rels", content: rels },
+    { name: "xl/worksheets/sheet1.xml", content: sheet },
+  ]);
+}
+
+export const MARKDOWN_TEXT = `# Invoice summary
+
+Invoice INV-2024-0007 was issued on 2024-03-01 for 1,200.00 USD.
+
+## Payment
+
+A payment of 1,200.00 USD was received against reference INV-2024-0007.
+`;

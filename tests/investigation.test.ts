@@ -157,7 +157,7 @@ describe("evidence ingestion", () => {
   it("rejects an unsupported file and stores nothing", async () => {
     const caseId = await newCase();
     const result = await upload(caseId, "virus.exe", executableBytes());
-    expect(result.error).toMatch(/not one of the supported types/i);
+    expect(result.error).toMatch(/did not match any supported format/i);
     const listed = await callAction<{ evidence: unknown[] }>(
       "list-evidence",
       { caseId },

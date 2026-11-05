@@ -74,12 +74,31 @@ export type Confidence = (typeof CONFIDENCE_LEVELS)[number];
 
 export const SUPPORTED_MIME_TYPES = [
   "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   "image/png",
   "image/jpeg",
   "text/plain",
+  "text/markdown",
   "text/csv",
 ] as const;
 export type SupportedMimeType = (typeof SUPPORTED_MIME_TYPES)[number];
+
+/**
+ * A short label for each supported type, used in user-facing messages so a
+ * rejection names the formats a person recognises (PDF, Word, Excel) rather
+ * than MIME strings.
+ */
+export const SUPPORTED_FORMAT_LABELS: Record<SupportedMimeType, string> = {
+  "application/pdf": "PDF",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "Word (.docx)",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Excel (.xlsx)",
+  "image/png": "PNG image",
+  "image/jpeg": "JPEG image",
+  "text/plain": "text",
+  "text/markdown": "Markdown",
+  "text/csv": "CSV",
+};
 
 /**
  * Cross-document relationship vocabulary (Mission 3).
