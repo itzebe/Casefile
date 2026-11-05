@@ -72,3 +72,46 @@ describe("cross-document panel wiring", () => {
     expect(workspaceSource).toContain("relationship.rationale");
   });
 });
+
+describe("classification, readiness, and report wiring", () => {
+  it("lets a person correct a document's type from the evidence row", () => {
+    // A proposed type must be correctable; the control calls classify-evidence.
+    expect(workspaceSource).toContain('useActionMutation("classify-evidence"');
+    expect(workspaceSource).toContain('data-testid="document-type-select"');
+    expect(workspaceSource).toContain("onClassify");
+  });
+
+  it("shows the classification confidence and whether a person set the type", () => {
+    expect(workspaceSource).toContain("classificationConfidence");
+    expect(workspaceSource).toContain("classificationCorrectedBy");
+    expect(workspaceSource).toContain("set by you");
+  });
+
+  it("renders the readiness panel and never presents a score", () => {
+    expect(workspaceSource).toContain('data-testid="readiness-panel"');
+    expect(workspaceSource).toContain('"assess-readiness"');
+    expect(workspaceSource).toContain("never a score");
+  });
+
+  it("renders the field-specific analysis panel with each label's source", () => {
+    expect(workspaceSource).toContain('data-testid="domain-panel"');
+    expect(workspaceSource).toContain('"analyse-documents"');
+    // Each finding shows the file and locator it came from.
+    expect(workspaceSource).toContain("finding.filename");
+    expect(workspaceSource).toContain("finding.ref");
+  });
+
+  it("renders the report panel with an export for each format", () => {
+    expect(workspaceSource).toContain('data-testid="report-panel"');
+    expect(workspaceSource).toContain('"export-report"');
+    expect(workspaceSource).toContain("Export Markdown");
+    expect(workspaceSource).toContain("Export HTML");
+    expect(workspaceSource).toContain("Export Word");
+  });
+
+  it("downloads an export through a blob rather than a public URL", () => {
+    // Evidence and reports are never given a public link.
+    expect(workspaceSource).toContain("createObjectURL");
+    expect(workspaceSource).toContain("revokeObjectURL");
+  });
+});

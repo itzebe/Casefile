@@ -5,8 +5,9 @@ import { Link } from "react-router";
 import type {
   CaseStatus,
   EvidenceCategory,
+  DocumentType,
 } from "@shared/casefile/types";
-import { label } from "@shared/casefile/types";
+import { DOCUMENT_TYPES, DOCUMENT_TYPE_LABELS, label } from "@shared/casefile/types";
 
 import { ProvenanceBadge, ReviewBadge, StatusPill } from "@/components/casefile/badges";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,9 @@ interface EvidenceItem {
   mimeType: string;
   byteSize: number;
   category: string;
+  documentType: string;
+  classificationConfidence: string | null;
+  classificationCorrectedBy: string | null;
   extractionStatus: string;
   extractionError: string | null;
   passageCount: number;
@@ -196,14 +200,18 @@ function fileToBase64(file: File): Promise<string> {
 function EvidenceRow({
   item,
   onCategorize,
+  onClassify,
   onDelete,
 }: {
   item: EvidenceItem;
   onCategorize: (evidenceId: string, category: string) => void;
+  onClassify: (evidenceId: string, documentType: string) => void;
   onDelete: (evidenceId: string) => void;
 }) {
   const [confirming, setConfirming] = useState(false);
   const extraction = item.extractionStatus;
+  const typeLabel =
+    DOCUMENT_TYPE_LABELS[item.documentType as DocumentType] ?? item.documentType;
 
   return (
     <div className="rounded-lg border border-border p-3">
@@ -253,6 +261,39 @@ function EvidenceRow({
             </Button>
           )}
         </div>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <span className="text-xs text-muted-foreground">Type:</span>
+        <select
+          aria-label={`Document type for ${item.filename}`}
+          value={item.documentType}
+          onChange={(event) => onClassify(item.id, event.target.value)}
+          className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
+          data-testid="document-type-select"
+        >
+          {DOCUMENT_TYPES.map((value) => (
+            <option key={value} value={value}>
+              {DOCUMENT_TYPE_LABELS[value]}
+            </option>
+          ))}
+        </select>
+        <span
+          className={cn(
+            "rounded-full border px-2 py-0.5 text-[11px]",
+            item.classificationCorrectedBy
+              ? "border-sky-600/40 bg-sky-500/10 text-sky-800 dark:text-sky-300"
+              : item.classificationConfidence === "high"
+                ? "border-emerald-600/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300"
+                : item.classificationConfidence === "medium"
+                  ? "border-amber-600/40 bg-amber-500/10 text-amber-800 dark:text-amber-300"
+                  : "border-border text-muted-foreground",
+          )}
+          title={typeLabel}
+        >
+          {item.classificationCorrectedBy
+            ? "set by you"
+            : `${item.classificationConfidence ?? "low"} confidence`}
+        </span>
       </div>
       {extraction === "unsupported" || extraction === "failed" ? (
         <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
@@ -659,6 +700,239 @@ function ComparisonSide({
   );
 }
 
+function ReadinessPanel({ caseId }: { caseId: string }) {
+  const readiness = useActionQuery<{
+    readiness: {
+      state: string;
+      label: string;
+      rationale: string;
+      established: string[];
+      unverified: string[];
+      contradicted: string[];
+      missing: string[];
+      needsReview: string[];
+      additionalEvidence: string[];
+      nextStep: string;
+      readyForReport: boolean;
+    };
+  }>("assess-readiness", { caseId });
+
+  if (readiness.isPending) {
+    return (
+      <Card className="mb-6">
+        <CardContent className="pt-6 text-sm text-muted-foreground">
+          Assessing readiness…
+        </CardContent>
+      </Card>
+    );
+  }
+  if (readiness.isError || !readiness.data) return null;
+  const state = readiness.data.readiness;
+
+  const groups: Array<{ heading: string; items: string[]; tone: string }> = [
+    { heading: "Established", items: state.established, tone: "text-emerald-700 dark:text-emerald-300" },
+    { heading: "Unverified", items: state.unverified, tone: "text-amber-700 dark:text-amber-300" },
+    { heading: "Contradicted", items: state.contradicted, tone: "text-destructive" },
+    { heading: "Missing", items: state.missing, tone: "text-amber-700 dark:text-amber-300" },
+  ];
+
+  return (
+    <Card className="mb-6" data-testid="readiness-panel">
+      <CardHeader>
+        <CardTitle className="text-base">Case readiness: {state.label}</CardTitle>
+        <CardDescription>{state.rationale}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid gap-3 sm:grid-cols-2">
+          {groups
+            .filter((group) => group.items.length > 0)
+            .map((group) => (
+              <div key={group.heading}>
+                <p className={cn("text-xs font-semibold uppercase tracking-wide", group.tone)}>
+                  {group.heading}
+                </p>
+                <ul className="mt-1 list-inside list-disc space-y-1 text-sm">
+                  {group.items.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+        </div>
+        <p className="text-sm">
+          <span className="font-medium">Next step: </span>
+          {state.nextStep}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Readiness is a named state with a stated reason, never a score. A case becomes ready
+          only when its documents have been read and its findings reviewed by a person.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DomainPanel({ caseId }: { caseId: string }) {
+  const analysis = useActionQuery<{
+    findings: Array<{
+      id: string;
+      domain: string;
+      role: string;
+      statement: string;
+      filename: string;
+      ref: string;
+      attributedTo: string | null;
+    }>;
+    summary: Array<{ domain: string; total: number; roles: Array<{ role: string; count: number }> }>;
+    counts: { total: number };
+  }>("analyse-documents", { caseId });
+
+  if (analysis.isPending) {
+    return (
+      <Card className="mb-6">
+        <CardContent className="pt-6 text-sm text-muted-foreground">
+          Reading the documents for field-specific content…
+        </CardContent>
+      </Card>
+    );
+  }
+  if (analysis.isError || !analysis.data) return null;
+  const { findings, summary } = analysis.data;
+
+  return (
+    <Card className="mb-6" data-testid="domain-panel">
+      <CardHeader>
+        <CardTitle className="text-base">Field-specific analysis</CardTitle>
+        <CardDescription>
+          Each statement is labelled by what it is in its own field: a judicial finding versus a
+          party&apos;s allegation, an invoiced amount versus a received one. Every label cites the
+          sentence it came from.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {findings.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No field-specific statements were identified yet.
+          </p>
+        ) : (
+          summary.map((entry) => (
+            <div key={entry.domain}>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {entry.domain} · {entry.total}
+              </p>
+              <div className="mt-2 space-y-2">
+                {findings
+                  .filter((finding) => finding.domain === entry.domain)
+                  .map((finding) => (
+                    <div key={finding.id} className="rounded-md border border-border p-2 text-sm">
+                      <span className="me-2 rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+                        {finding.role.replace(/-/g, " ")}
+                        {finding.attributedTo ? ` · ${finding.attributedTo}` : ""}
+                      </span>
+                      {finding.statement}
+                      <span className="mt-1 block text-xs text-muted-foreground">
+                        {finding.filename} — {finding.ref}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          ))
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ReportPanel({ caseId }: { caseId: string }) {
+  const report = useActionQuery<{
+    title: string;
+    overview: string;
+    readiness: { label: string };
+    reviewSummary: { proposed: number; confirmed: number; rejected: number };
+    documentRegister: unknown[];
+    outstandingQuestions: string[];
+  }>("build-report", { caseId });
+  const [busy, setBusy] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const exportReport = useActionMutation("export-report");
+
+  const download = async (format: "markdown" | "html" | "docx") => {
+    setBusy(format);
+    setMessage(null);
+    try {
+      const result = await exportReport.mutateAsync({ caseId, format });
+      const bytes = Uint8Array.from(atob(result.contentBase64), (c) => c.charCodeAt(0));
+      const blob = new Blob([bytes], { type: result.mimeType });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = result.filename;
+      link.click();
+      URL.revokeObjectURL(url);
+      setMessage(`Exported ${result.filename}.`);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <Card className="mb-6" data-testid="report-panel">
+      <CardHeader>
+        <CardTitle className="text-base">Investigation report</CardTitle>
+        <CardDescription>
+          Assembled from the stored record, with citations and review marks preserved. The export
+          is downloaded directly; no public link is created.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {report.data ? (
+          <>
+            <p className="text-sm">{report.data.overview}</p>
+            <p className="text-sm text-muted-foreground">
+              {report.data.documentRegister.length} document(s) ·{" "}
+              {report.data.reviewSummary.confirmed} confirmed ·{" "}
+              {report.data.reviewSummary.proposed} proposed ·{" "}
+              {report.data.outstandingQuestions.length} outstanding question(s)
+            </p>
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">Preparing the report…</p>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void download("markdown")}
+            disabled={busy !== null}
+          >
+            {busy === "markdown" ? "Exporting…" : "Export Markdown"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void download("html")}
+            disabled={busy !== null}
+          >
+            {busy === "html" ? "Exporting…" : "Export HTML"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void download("docx")}
+            disabled={busy !== null}
+          >
+            {busy === "docx" ? "Exporting…" : "Export Word"}
+          </Button>
+        </div>
+        {message ? <p className="text-xs text-muted-foreground">{message}</p> : null}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function CaseWorkspace({ caseId }: { caseId: string }) {
   const fileInput = useRef<HTMLInputElement>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -755,6 +1029,11 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
   });
 
   const categorize = useActionMutation("categorize-evidence", {
+    onSuccess: () => invalidate(),
+    onError: (err: Error) => setError(err.message),
+  });
+
+  const classify = useActionMutation("classify-evidence", {
     onSuccess: () => invalidate(),
     onError: (err: Error) => setError(err.message),
   });
@@ -926,7 +1205,7 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
               ref={fileInput}
               type="file"
               multiple
-              accept=".pdf,.png,.jpg,.jpeg,.txt,.csv,.log,.md"
+              accept=".pdf,.png,.jpg,.jpeg,.txt,.csv,.log,.md,.docx,.xlsx"
               className="hidden"
               onChange={(event) => void onFilesChosen(event.target.files)}
             />
@@ -951,6 +1230,9 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
                 item={item}
                 onCategorize={(evidenceId, value) =>
                   categorize.mutate({ caseId, evidenceId, category: value as EvidenceCategory })
+                }
+                onClassify={(evidenceId, documentType) =>
+                  classify.mutate({ caseId, evidenceId, documentType: documentType as DocumentType })
                 }
                 onDelete={(evidenceId) =>
                   removeEvidence.mutate({ caseId, evidenceId, confirm: true })
@@ -992,6 +1274,12 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
           setSelectedPassageId(passageId);
         }}
       />
+
+      <DomainPanel caseId={caseId} />
+
+      <ReadinessPanel caseId={caseId} />
+
+      <ReportPanel caseId={caseId} />
 
       {selectedEvidenceId ? (
         <section className="mb-6" data-testid="passage-viewer">
