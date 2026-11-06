@@ -165,6 +165,21 @@ rejected even if it looks better in isolation.
 - **One concept, one serialiser.** `get-case` and `list-evidence` both feed the
   workspace's evidence panel. Any field the panel renders (`passageCount`,
   `citedByFindings`) must be present on both, or the panel silently blanks.
+- **The deploy config owns schema, not the request.** A hosted request runtime
+  never creates tables (`schemaIsReleaseOwned()` gates DDL), so every release
+  migration must run at build time on the production branch. `netlify.toml`
+  runs `pnpm migrate:production` when `CONTEXT=production`; `vercel.json` runs
+  the same script when `VERCEL_ENV=production`, after the build, and refuses to
+  continue if `DATABASE_URL` is unset. When you add or change a deploy target,
+  mirror that contract — a framework table that only exists in a migration
+  (e.g. `agent_chat_submission_inbox`, chat-threads v5) is absent on production
+  until a production build has applied it, and the failure surfaces only at
+  runtime as `relation "..." does not exist`.
+- **Deployment-level provider defaults.** Every signup gets its own
+  organization, so a per-org app model default does not reach a judge in a
+  fresh org. Set the deployment default with `AGENT_ENGINE` + `AGENT_MODEL`
+  (`ai-sdk:groq` / `openai/gpt-oss-120b`); the framework's hard-coded
+  `DEFAULT_MODEL` is retired at Groq and fails with "model does not exist".
 - **Do not deploy** without an explicit instruction to deploy.
 
 ## 6. Testing and verification
