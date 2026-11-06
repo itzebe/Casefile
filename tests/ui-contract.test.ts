@@ -255,3 +255,34 @@ describe("both demonstrations are reachable from the cases page", () => {
     expect(casesSource).toContain('data-testid="load-court-demo-case-empty"');
   });
 });
+
+/**
+ * Tap targets.
+ *
+ * A control a person must aim at needs a 24x24 CSS-pixel hit area (WCAG 2.5.8,
+ * Target Size Minimum). The workspace once shipped block and list controls at
+ * 16px tall - a 16px-tall "Confirm" beside a 16px-tall "Dismiss" is a
+ * mis-tap waiting to happen. Inline links inside a sentence are exempt, so the
+ * one underlined control without vertical padding (the quoted-passage link) is
+ * deliberately excluded and asserted here so the exemption stays intentional.
+ */
+describe("tap targets in the case workspace", () => {
+  const buttonTags = [...workspaceSource.matchAll(/<button[\s\S]*?>/g)].map((m) => m[0]);
+  const underlined = buttonTags.filter((tag) => tag.includes("underline"));
+
+  it("finds the underlined controls it means to police", () => {
+    expect(underlined.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("gives every non-inline underlined control vertical padding", () => {
+    const offenders = underlined.filter(
+      (tag) => !/\bpy-/.test(tag) && !/ms-1 underline/.test(tag),
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps exactly one inline quoted-passage link exempt", () => {
+    const exempt = underlined.filter((tag) => /ms-1 underline/.test(tag));
+    expect(exempt).toHaveLength(1);
+  });
+});

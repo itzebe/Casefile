@@ -807,7 +807,7 @@ function CrossDocumentPanel({
                     {gap.relatedEvidenceIds.length > 0 ? (
                       <button
                         type="button"
-                        className="mt-1 text-xs underline"
+                        className="mt-1 py-1 text-xs underline"
                         onClick={() => onSelectEvidence(gap.relatedEvidenceIds[0]!, null)}
                       >
                         Go to the related document
@@ -843,7 +843,7 @@ function CrossDocumentPanel({
                     {relationship.sourcePassageId ? (
                       <button
                         type="button"
-                        className="underline"
+                        className="py-1 underline"
                         onClick={() =>
                           onSelectEvidence(
                             relationship.fromType === "passage"
@@ -861,7 +861,7 @@ function CrossDocumentPanel({
                       {relationship.reviewStatus !== "confirmed" ? (
                         <button
                           type="button"
-                          className="underline"
+                          className="py-1 underline"
                           onClick={() => onReviewRelationship(relationship.id, "confirmed")}
                         >
                           Confirm
@@ -870,7 +870,7 @@ function CrossDocumentPanel({
                       {relationship.reviewStatus !== "rejected" ? (
                         <button
                           type="button"
-                          className="underline"
+                          className="py-1 underline"
                           onClick={() => onReviewRelationship(relationship.id, "rejected")}
                         >
                           Dismiss
@@ -908,7 +908,7 @@ function ComparisonSide({
             <button
               key={`${citation.evidenceId}-${citation.passageId ?? index}`}
               type="button"
-              className="block w-full text-start text-xs text-muted-foreground underline decoration-dotted"
+              className="block w-full py-1 text-start text-xs text-muted-foreground underline decoration-dotted"
               onClick={() => onSelectEvidence(citation.evidenceId, citation.passageId)}
             >
               {citation.ref ?? "source"}
@@ -1674,7 +1674,7 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
                       <ProvenanceBadge value={finding.provenance} />
                       <button
                         type="button"
-                        className="text-start underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="py-1 text-start underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         onClick={() => jumpTo(`finding-${finding.id}`)}
                       >
                         {finding.statement}
