@@ -107,6 +107,14 @@ export function CasesPage() {
     onError: (err: Error) => setError(err.message),
   });
 
+  const loadCourtDemo = useActionMutation<{ caseId: string; created: boolean }>("load-demo-case", {
+    onSuccess: (result) => {
+      setError(null);
+      navigate(casePath(result.caseId));
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
   const cases = query.data?.cases ?? [];
 
   const submit = () => {
@@ -150,7 +158,15 @@ export function CasesPage() {
             disabled={loadDemo.isPending}
             data-testid="load-demo-case"
           >
-            {loadDemo.isPending ? "Loading demo…" : "Load demo case"}
+            {loadDemo.isPending ? "Loading demo…" : "Load payment demo"}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => loadCourtDemo.mutate({ scenario: "court" })}
+            disabled={loadCourtDemo.isPending}
+            data-testid="load-court-demo-case"
+          >
+            {loadCourtDemo.isPending ? "Loading demo…" : "Load court demo"}
           </Button>
           <Button onClick={() => setShowCreate((open) => !open)} variant={showCreate ? "outline" : "default"}>
             {showCreate ? "Cancel" : "New case"}
@@ -268,17 +284,28 @@ export function CasesPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Button
-              variant="outline"
-              onClick={() => loadDemo.mutate({})}
-              disabled={loadDemo.isPending}
-              data-testid="load-demo-case-empty"
-            >
-              {loadDemo.isPending ? "Loading demo…" : "Load the demonstration case"}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={() => loadDemo.mutate({})}
+                disabled={loadDemo.isPending}
+                data-testid="load-demo-case-empty"
+              >
+                {loadDemo.isPending ? "Loading demo…" : "Load the payment demo"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => loadCourtDemo.mutate({ scenario: "court" })}
+                disabled={loadCourtDemo.isPending}
+                data-testid="load-court-demo-case-empty"
+              >
+                {loadCourtDemo.isPending ? "Loading demo…" : "Load the court demo"}
+              </Button>
+            </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              Five synthetic documents about a disputed refund. No real party, payment, or
-              proceeding.
+              The payment demo is five synthetic documents about a disputed refund. The court demo
+              is six synthetic documents that separate a party&apos;s allegation from a court&apos;s
+              finding. Neither represents a real party, payment, or proceeding.
             </p>
           </CardContent>
         </Card>

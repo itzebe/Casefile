@@ -2,7 +2,8 @@ import { defineAction } from "@agent-native/core/action";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
-import { DEMO_CASE, DEMO_DOCUMENTS } from "../shared/casefile/demo-case.js";
+import { DEMO_CASE, DEMO_DOCUMENTS, type DemoDocument } from "../shared/casefile/demo-case.js";
+import { COURT_DEMO_CASE, COURT_DEMO_DOCUMENTS } from "../shared/casefile/court-demo-case.js";
 import { recordAudit } from "../server/casefile/access.js";
 import { casefileContext } from "../server/casefile/context.js";
 import { storeEvidenceFile } from "../server/casefile/evidence-upload.js";
@@ -26,8 +27,14 @@ import * as schema from "../server/db/schema.js";
  */
 export default defineAction({
   description:
-    "Load the built-in synthetic demonstration case into this workspace: five documents about a disputed refund, extracted, classified, and analysed so the cross-document contradiction, agreement, and gaps can be reviewed. Safe to call more than once; returns the existing demo case if one is already present.",
+    "Load a built-in synthetic demonstration case into this workspace: either the disputed-refund payment case, or the court case that separates a party allegation from a court finding. The documents are extracted, classified, and linked so the cross-document contradictions, agreements, and gaps can be reviewed. Safe to call more than once; returns the existing demo case if one is already present.",
   schema: z.object({
+    scenario: z
+      .enum(["payment", "court"])
+      .default("payment")
+      .describe(
+        "Which bundled demonstration to load: the disputed-refund payment case, or the court case that separates an allegation from a judgment.",
+      ),
     title: z
       .string()
       .min(1)
@@ -39,7 +46,11 @@ export default defineAction({
   run: async (args, ctx) => {
     const { userEmail, actor, caller, runId } = casefileContext(ctx);
     const db = getDb();
-    const title = (args.title ?? DEMO_CASE.title).trim();
+    const scenario = args.scenario ?? "payment";
+    const definition = scenario === "court" ? COURT_DEMO_CASE : DEMO_CASE;
+    const documents: DemoDocument[] =
+      scenario === "court" ? COURT_DEMO_DOCUMENTS : DEMO_DOCUMENTS;
+    const title = (args.title ?? definition.title).trim();
 
     const [existing] = await db
       .select({ id: schema.cases.id })
@@ -62,10 +73,10 @@ export default defineAction({
       id: caseId,
       ownerEmail: userEmail,
       title,
-      description: DEMO_CASE.description,
-      category: DEMO_CASE.category,
-      amountMinor: DEMO_CASE.amountMinor,
-      currency: DEMO_CASE.currency,
+      description: definition.description,
+      category: definition.category,
+      amountMinor: definition.amountMinor,
+      currency: definition.currency,
       status: "open",
     });
 
@@ -76,12 +87,12 @@ export default defineAction({
       action: "case.create",
       targetType: "case",
       targetId: caseId,
-      summary: "Loaded the synthetic demonstration case",
+      summary: `Loaded the synthetic ${scenario} demonstration case`,
       caller,
       runId,
     });
 
-    for (const doc of DEMO_DOCUMENTS) {
+    for (const doc of documents) {
       const outcome = await storeEvidenceFile({
         caseId,
         ownerEmail: userEmail,

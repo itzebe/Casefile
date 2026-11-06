@@ -11,9 +11,10 @@
  * or the agent so a reviewer sees proposals arrive, not a pre-baked result.
  *
  * Usage:
- *   node scripts/seed-demo-case.mjs [baseUrl]
+ *   node scripts/seed-demo-case.mjs [baseUrl] [payment|court]
  */
 const BASE = process.argv[2] ?? "http://localhost:12000";
+const SCENARIO = process.argv[3] === "court" ? "court" : "payment";
 const ACTIONS = `${BASE}/_agent-native/actions`;
 
 async function call(name, body = {}) {
@@ -35,9 +36,9 @@ async function call(name, body = {}) {
   return json;
 }
 
-console.log(`Seeding demo case against ${BASE}`);
+console.log(`Seeding the ${SCENARIO} demo case against ${BASE}`);
 
-const result = await call("load-demo-case", {});
+const result = await call("load-demo-case", { scenario: SCENARIO });
 const caseId = result.caseId;
 if (!caseId) throw new Error(`load-demo-case returned no id: ${JSON.stringify(result)}`);
 

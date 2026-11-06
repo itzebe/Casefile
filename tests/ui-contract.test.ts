@@ -229,3 +229,23 @@ describe("landing page is product-specific", () => {
     expect(homeSource).toContain("Analysis proposes");
   });
 });
+
+describe("both demonstrations are reachable from the cases page", () => {
+  const casesSource = readFileSync(
+    fileURLToPath(new URL("../app/components/casefile/CasesPage.tsx", import.meta.url)),
+    "utf8",
+  );
+
+  it("offers the payment and court demos, each naming its scenario", () => {
+    expect(casesSource).toContain('data-testid="load-demo-case"');
+    expect(casesSource).toContain('data-testid="load-court-demo-case"');
+    // The court button must actually request the court scenario, not the
+    // default, or both buttons load the same case.
+    expect(casesSource).toContain('scenario: "court"');
+  });
+
+  it("offers both demos from the empty state too", () => {
+    expect(casesSource).toContain('data-testid="load-demo-case-empty"');
+    expect(casesSource).toContain('data-testid="load-court-demo-case-empty"');
+  });
+});
