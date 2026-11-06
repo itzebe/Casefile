@@ -16,7 +16,7 @@
  */
 import { readFileSync } from "node:fs";
 
-const BASE = process.argv[2] ?? process.env.BASE ?? "http://localhost:12000";
+const BASE = process.argv[2] ?? "http://localhost:12000";
 const ACTIONS = `${BASE}/_agent-native/actions`;
 
 async function call(name, body = {}, method = "POST") {
