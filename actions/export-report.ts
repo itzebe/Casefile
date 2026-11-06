@@ -5,11 +5,12 @@ import { recordAudit, requireOwnedCase } from "../server/casefile/access.js";
 import { casefileContext } from "../server/casefile/context.js";
 import { buildReport, renderReportHtml, renderReportMarkdown } from "../server/casefile/report.js";
 import { renderReportDocx } from "../server/casefile/report-docx.js";
+import { renderReportPdf } from "../server/casefile/report-pdf.js";
 
 /**
  * Exports the investigation report in a shareable format.
  *
- * Markdown, HTML, and DOCX all come from the same report object, so the
+ * Markdown, HTML, DOCX, and PDF all come from the same report object, so the
  * citations and the proposed/confirmed marks are identical across formats. The
  * export is returned as base64 in the action response, so it is delivered
  * through the same authorized action surface as everything else - no public
@@ -20,11 +21,11 @@ import { renderReportDocx } from "../server/casefile/report-docx.js";
  */
 export default defineAction({
   description:
-    "Export the investigation report as markdown, HTML, or DOCX. The export preserves citations and marks proposed statements as proposed. Returns base64-encoded file content; no public URL is created.",
+    "Export the investigation report as markdown, HTML, DOCX, or PDF. The export preserves citations and marks proposed statements as proposed. Returns base64-encoded file content; no public URL is created.",
   schema: z.object({
     caseId: z.string().min(1).describe("The case to export a report for."),
     format: z
-      .enum(["markdown", "html", "docx"])
+      .enum(["markdown", "html", "docx", "pdf"])
       .default("markdown")
       .describe("The export format."),
   }),
@@ -49,6 +50,10 @@ export default defineAction({
       filename = `casefile-${safeTitle}.docx`;
       mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
       bytes = renderReportDocx(report);
+    } else if (args.format === "pdf") {
+      filename = `casefile-${safeTitle}.pdf`;
+      mimeType = "application/pdf";
+      bytes = renderReportPdf(report);
     } else {
       filename = `casefile-${safeTitle}.md`;
       mimeType = "text/markdown";

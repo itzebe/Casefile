@@ -213,6 +213,11 @@ describe("acceptance scenarios", () => {
           { caseId, format: "docx" },
           userContext(OWNER),
         );
+        const pdf = await callAction<{ contentBase64: string; filename: string }>(
+          "export-report",
+          { caseId, format: "pdf" },
+          userContext(OWNER),
+        );
         const md = Buffer.from(markdown.contentBase64, "base64").toString("utf8");
         expect(markdown.filename).toMatch(/\.md$/);
         expect(md).toContain("# Investigation report");
@@ -220,6 +225,12 @@ describe("acceptance scenarios", () => {
         // A DOCX is a ZIP; check the signature.
         const docxBytes = Buffer.from(docx.contentBase64, "base64");
         expect(docxBytes.subarray(0, 2).toString("latin1")).toBe("PK");
+        // A PDF must start with the header and end with the EOF marker, or a
+        // reader rejects it. The bytes are also what a person downloads.
+        const pdfBytes = Buffer.from(pdf.contentBase64, "base64");
+        expect(pdf.filename).toMatch(/\.pdf$/);
+        expect(pdfBytes.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+        expect(pdfBytes.subarray(-6).toString("latin1").trim()).toBe("%%EOF");
       });
 
       it("keeps one user's case invisible to another", async () => {

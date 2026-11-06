@@ -114,6 +114,7 @@ describe("classification, readiness, and report wiring", () => {
     expect(workspaceSource).toContain("Export Markdown");
     expect(workspaceSource).toContain("Export HTML");
     expect(workspaceSource).toContain("Export Word");
+    expect(workspaceSource).toContain("Export PDF");
   });
 
   it("downloads an export through a blob rather than a public URL", () => {

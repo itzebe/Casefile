@@ -210,22 +210,28 @@ describe("extractImageFile (OCR)", () => {
     }
   });
 
-  it("reads text from a real image with the configured OCR engine", async () => {
-    // Skipped rather than faked when no engine is configured: a test that
-    // stubbed OCR would not prove the real path works.
-    if (!hasEngine) return;
-    const bytes = new Uint8Array(
-      readFileSync(fileURLToPath(new URL("./fixtures/ocr-receipt.png", import.meta.url))),
-    );
-    const result = await extractImageFile(bytes, "image/png");
-    expect(result.status).toBe("complete");
-    const text = result.passages.map((passage) => passage.text).join("\n");
-    expect(text).toContain("PAYMENT RECEIPT");
-    expect(text).toContain("Northwind Traders");
-    expect(text).toContain("TXN-88421907");
-    expect(text).toContain("249.99");
-    expect(result.passages[0].ref).toBe("image text 1");
-  });
+  it(
+    "reads text from a real image with the configured OCR engine",
+    async () => {
+      // Skipped rather than faked when no engine is configured: a test that
+      // stubbed OCR would not prove the real path works.
+      if (!hasEngine) return;
+      const bytes = new Uint8Array(
+        readFileSync(fileURLToPath(new URL("./fixtures/ocr-receipt.png", import.meta.url))),
+      );
+      const result = await extractImageFile(bytes, "image/png");
+      expect(result.status).toBe("complete");
+      const text = result.passages.map((passage) => passage.text).join("\n");
+      expect(text).toContain("PAYMENT RECEIPT");
+      expect(text).toContain("Northwind Traders");
+      expect(text).toContain("TXN-88421907");
+      expect(text).toContain("249.99");
+      expect(result.passages[0].ref).toBe("image text 1");
+    },
+    // Spawning tesseract on a real image takes several seconds; the default 5s
+    // budget is for pure functions, not for an external process.
+    30_000,
+  );
 
   it("reports an image with no readable text as unsupported, never empty", async () => {
     if (!hasEngine) return;
@@ -235,7 +241,7 @@ describe("extractImageFile (OCR)", () => {
     const result = await extractImageFile(pngBytes(), "image/png");
     expect(result.status).toBe("unsupported");
     expect(result.limitation).toMatch(/no readable text/i);
-  });
+  }, 30_000);
 });
 
 describe("DOCX extraction", () => {
