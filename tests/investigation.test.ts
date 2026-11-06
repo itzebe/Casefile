@@ -495,6 +495,114 @@ describe("prompt injection defence", () => {
     );
   });
 
+  it("never lets an allegation be stored as a documented fact", async () => {
+    const caseId = await newCase();
+    // A pleading reports what a party says; it does not record the fact itself.
+    await upload(
+      caseId,
+      "pleading.txt",
+      textBytes(
+        "STATEMENT OF CLAIM\n\nThe claimant alleges that the defendant failed to deliver the goods.",
+      ),
+    );
+    await callAction("extract-evidence", { caseId }, userContext(OWNER));
+
+    const { analyzeCaseEvidence, buildEvidenceBundle } = await import(
+      "../server/casefile/analysis.js"
+    );
+    const bundle = await buildEvidenceBundle(caseId, OWNER);
+    const passageId = [...bundle.passagesById.keys()][0] ?? "psg_1";
+    // The model labels the claim "documented" because a real document states
+    // it. The server has to know better: the document only reports a party's
+    // assertion, so the finding must come back as `asserted`.
+    const runner = async () =>
+      JSON.stringify({
+        claims: [
+          {
+            statement: "The defendant failed to deliver the goods.",
+            provenance: "documented",
+            citations: [{ passageId, quote: "the claimant alleges" }],
+          },
+        ],
+        events: [],
+        parties: [],
+      });
+    const result = await analyzeCaseEvidence(caseId, OWNER, { runner });
+
+    expect(result.claims[0].provenance).toBe("asserted");
+  });
+
+  it("keeps a court's own finding as documented", async () => {
+    const caseId = await newCase();
+    // A judgment is the court's own record, so a finding it states really is
+    // documented - the downgrade must not reach it.
+    await upload(
+      caseId,
+      "judgment.txt",
+      textBytes(
+        "JUDGMENT\n\nThe court finds that the defendant did breach the agreement by failing to deliver on time.",
+      ),
+    );
+    await callAction("extract-evidence", { caseId }, userContext(OWNER));
+
+    const { analyzeCaseEvidence, buildEvidenceBundle } = await import(
+      "../server/casefile/analysis.js"
+    );
+    const bundle = await buildEvidenceBundle(caseId, OWNER);
+    const passageId = [...bundle.passagesById.keys()][0] ?? "psg_1";
+    const runner = async () =>
+      JSON.stringify({
+        claims: [
+          {
+            statement: "The court found the defendant breached the agreement.",
+            provenance: "documented",
+            citations: [{ passageId, quote: "The court finds that the defendant did breach" }],
+          },
+        ],
+        events: [],
+        parties: [],
+      });
+    const result = await analyzeCaseEvidence(caseId, OWNER, { runner });
+
+    expect(result.claims[0].provenance).toBe("documented");
+  });
+
+  it("does not let a pleading write a timeline entry as documented", async () => {
+    const caseId = await newCase();
+    await upload(
+      caseId,
+      "pleading.txt",
+      textBytes(
+        "STATEMENT OF CLAIM\n\nThe claimant alleges that the goods were delivered on 2024-03-05.",
+      ),
+    );
+    await callAction("extract-evidence", { caseId }, userContext(OWNER));
+
+    const { analyzeCaseEvidence, buildEvidenceBundle } = await import(
+      "../server/casefile/analysis.js"
+    );
+    const bundle = await buildEvidenceBundle(caseId, OWNER);
+    const passageId = [...bundle.passagesById.keys()][0] ?? "psg_1";
+    const runner = async () =>
+      JSON.stringify({
+        claims: [],
+        events: [
+          {
+            description: "The goods were delivered on 2024-03-05.",
+            dateText: "2024-03-05",
+            dateIso: "2024-03-05",
+            citations: [{ passageId, quote: "The claimant alleges" }],
+          },
+        ],
+        parties: [],
+      });
+    const result = await analyzeCaseEvidence(caseId, OWNER, { runner });
+
+    // The timeline event is real and citable, but its source is a party's
+    // account, so it must not be presented as a recorded fact.
+    expect(result.events[0].provenance).toBe("asserted");
+  });
+
   it("never stores the literal string \"null\" as a finding's uncertainty", async () => {
     const caseId = await newCase();
     await upload(caseId, "receipt.txt", textBytes(RECEIPT_TEXT));
