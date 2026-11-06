@@ -186,7 +186,9 @@ describe("extractImageFile (OCR)", () => {
     // so a machine with tesseract installed still reported every image as
     // unreadable. Discovery must find a binary on PATH on its own. The test
     // skips only when no engine is installed at all.
-    const { ocrBinaryPath } = await import("../server/casefile/ocr.js");
+    const { discoverTesseractOnPath, ocrBinaryPath } = await import(
+      "../server/casefile/ocr.js"
+    );
     const { execFileSync } = await import("node:child_process");
     let onPath: string | null = null;
     try {
@@ -195,19 +197,15 @@ describe("extractImageFile (OCR)", () => {
       onPath = null;
     }
     if (!onPath) {
-      // No engine on this machine; the module must still answer cleanly.
+      // No engine on this machine; discovery must still answer cleanly.
+      expect(discoverTesseractOnPath()).toBeNull();
       expect(ocrBinaryPath()).toBeNull();
       return;
     }
-    const saved = process.env.CASEFILE_TESSERACT_PATH;
-    delete process.env.CASEFILE_TESSERACT_PATH;
-    try {
-      // A binary exists on PATH, so discovery must return it without an override.
-      expect(ocrBinaryPath()).toBe(onPath);
-    } finally {
-      if (saved === undefined) delete process.env.CASEFILE_TESSERACT_PATH;
-      else process.env.CASEFILE_TESSERACT_PATH = saved;
-    }
+    // A binary exists on PATH, so discovery must find it on its own - the
+    // regression this pins was requiring an env var to be set by hand.
+    expect(discoverTesseractOnPath()).toBe(onPath);
+    expect(ocrBinaryPath()).toBe(onPath);
   });
 
   it(

@@ -224,6 +224,25 @@ Use local docs only (no web research): `pnpm action docs-search --query "<topic>
 
 For custom branding, keep `server/plugins/agent-native-email-branding.ts` aligned: `app.name` appears in transactional email and optional `app.logoUrl` must be an absolute HTTPS URL.
 
+## Demonstrations
+
+Two synthetic cases load through `load-demo-case` and run the real
+validate-store-extract-classify-graph pipeline, so neither hardcodes a result.
+
+- `scenario: "payment"` (default) — five documents about a disputed refund. The
+  merchant affirms a refund and the customer denies it on the same reference
+  (RRF-55210) at different amounts, so `analyze-evidence` proposes a genuine
+  contradiction.
+- `scenario: "court"` — six court documents that all carry case number
+  HC-2024-1234, so the graph links them into one proceeding. The judgment
+  recites counsel's submission, the defendant's allegation, and the court's own
+  finding in separate sentences, so `analyse-documents` must label them
+  differently. No real party, contract, or proceeding is represented.
+
+Loading is idempotent per scenario: reloading returns the existing case. The
+cases page offers both; `scripts/seed-demo-case.mjs [baseUrl] [payment|court]`
+seeds from the CLI.
+
 ## Application state
 
 - `navigation` describes the view and selected ids. Chat is `chat` at `/chat` and `/chat/<threadId>`; the Get started page is `home` at `/home`; `/` opens shared sign-in/signup.

@@ -48,7 +48,7 @@ function executable(path: string): boolean {
   }
 }
 
-function discoverOnPath(): string | null {
+export function discoverTesseractOnPath(): string | null {
   // A PATH entry is a directory name, never a credential.
   const pathValue = process.env.PATH?.trim(); // guard:allow-env-credential — search path, not a credential
   const dirs = pathValue ? pathValue.split(delimiter) : [];
@@ -63,7 +63,7 @@ function discoverOnPath(): string | null {
 export function ocrBinaryPath(): string | null {
   // A local filesystem path to a binary, never a credential.
   const configured = process.env.CASEFILE_TESSERACT_PATH?.trim(); // guard:allow-env-credential — local binary path, not a credential
-  const resolved = configured || discoverOnPath();
+  const resolved = configured || discoverTesseractOnPath();
   if (!resolved) return null;
   if (cachedAvailability?.path === resolved) {
     return cachedAvailability.available ? resolved : null;
