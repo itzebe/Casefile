@@ -191,12 +191,16 @@ const EVIDENCE_CATEGORIES = [
 /**
  * The client aborts an action after 60s by default. Analysis runs a model over
  * every extracted passage and routinely takes longer, so it is given its own
- * budget instead of failing mid-flight. The budget stays under the hosting
- * platform's 300s function limit: at exactly the limit the request would be
- * killed at the same instant the client gave up, and the two failures are
- * indistinguishable from a click that never registered.
+ * budget instead of failing mid-flight.
+ *
+ * The three limits have to be ordered: the server's own model budget is 290s,
+ * this client timeout is 295s, and the hosting platform stops a function at
+ * 300s. The client must outlast the server, or the browser gives up first and
+ * the server's stated reason - "ran out of its 290s budget" - is never seen.
+ * Both must stay under the platform limit, or the function is killed mid-flight
+ * and the failure is an opaque network error with nothing recorded.
  */
-export const ANALYSIS_TIMEOUT_MS = 4 * 60_000;
+export const ANALYSIS_TIMEOUT_MS = 295_000;
 
 function humanBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

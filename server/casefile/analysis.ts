@@ -311,7 +311,13 @@ export async function analyzeCaseEvidence(
     : await runModel({
         systemPrompt: SYSTEM_PROMPT,
         userPrompt,
-        maxOutputTokens: 4096,
+        // The cap has to fit inside the time budget, or the run is cut off
+        // mid-JSON. On CPU this workspace generates roughly 9-14 tokens/second,
+        // so a 4096-token cap needs up to ~7 minutes while the budget allows
+        // 290s - the model was being stopped partway through the object. The
+        // prompt asks for at most 12 claims, 12 events, and 8 parties, which is
+        // well under 3000 tokens, so this cap is never the binding constraint.
+        maxOutputTokens: 3000,
         signal: options?.signal,
       });
 

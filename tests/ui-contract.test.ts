@@ -196,6 +196,21 @@ describe("analysis timeout hierarchy", () => {
     const serverModelTimeoutMs = Number(match![1].replace(/_/g, ""));
     expect(serverModelTimeoutMs).toBeLessThan(PLATFORM_FUNCTION_LIMIT_MS);
   });
+
+  it("lets the client outlast the server so the server's reason is seen", async () => {
+    // The client timeout must be strictly above the server's model budget.
+    // When it was 240s against a 260s server budget the browser dropped the
+    // request 20s before the server would have answered, so the stated reason
+    // ("ran out of its 260s budget") never reached the user - the failure read
+    // as a dead click. Both numbers sat under the platform limit, so the two
+    // checks above passed while the nesting was still wrong.
+    const { ANALYSIS_TIMEOUT_MS } = await import(
+      "../app/components/casefile/CaseWorkspace.tsx"
+    );
+    const match = modelSource.match(/const DEFAULT_TIMEOUT_MS = ([\d_]+)/);
+    const serverModelTimeoutMs = Number(match![1].replace(/_/g, ""));
+    expect(ANALYSIS_TIMEOUT_MS).toBeGreaterThan(serverModelTimeoutMs);
+  });
 });
 
 describe("analysis progress is visible", () => {
