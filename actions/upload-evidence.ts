@@ -10,13 +10,7 @@ import {
 } from "../shared/casefile/types.js";
 import { recordAudit, requireOwnedCase } from "../server/casefile/access.js";
 import { casefileContext } from "../server/casefile/context.js";
-import { touchCase } from "../server/casefile/case-queries.js";
-import {
-  buildStorageKey,
-  resolveEvidenceStore,
-} from "../server/casefile/evidence-store.js";
-import { safeFilename, validateEvidenceFile } from "../server/casefile/file-validation.js";
-import { newEvidenceId } from "../server/casefile/ids.js";
+import { storeEvidenceFile } from "../server/casefile/evidence-upload.js";
 import { getDb } from "../server/db/index.js";
 import * as schema from "../server/db/schema.js";
 
@@ -29,8 +23,9 @@ import * as schema from "../server/db/schema.js";
  * encoded ceiling is set accordingly. `maxBodyBytes` raises the route's
  * body limit above its default for this action only.
  *
- * Validation happens before anything is written: type from magic bytes, size,
- * and a digest for duplicate detection.
+ * Validation and storage live in `server/casefile/evidence-upload.ts`, shared
+ * with the demo loader. Validation happens before anything is written: type
+ * from magic bytes, size, and a digest for duplicate detection.
  */
 export default defineAction({
   description:
@@ -98,76 +93,33 @@ export default defineAction({
       });
     }
 
-    const validation = validateEvidenceFile({
+    const outcome = await storeEvidenceFile({
+      caseId: ownedCase.id,
+      ownerEmail: userEmail,
       filename: args.filename,
       data,
       declaredMimeType: args.mimeType,
+      category: args.category,
     });
-    if (!validation.ok) {
+
+    if (outcome.kind === "rejected") {
       // A rejected file is reported with the reason, and nothing is stored.
       // A validation failure is the caller's, not the server's, so it is
       // surfaced as 4xx with a code rather than an opaque 500.
-      fail(validation.message, {
-        errorCode: validation.code,
-        statusCode: validation.code === "file_too_large" ? 413 : 400,
+      fail(outcome.message, {
+        errorCode: outcome.code,
+        statusCode: outcome.code === "file_too_large" ? 413 : 400,
       });
     }
 
-    // Duplicate detection is scoped to the case: the same receipt in two cases
-    // is legitimate, the same receipt twice in one case is not.
-    const [duplicate] = await db
-      .select({
-        id: schema.evidence.id,
-        filename: schema.evidence.filename,
-      })
-      .from(schema.evidence)
-      .where(
-        and(
-          eq(schema.evidence.caseId, ownedCase.id),
-          eq(schema.evidence.sha256, validation.sha256),
-        ),
-      )
-      .limit(1);
-    if (duplicate) {
+    if (outcome.kind === "duplicate") {
       return {
         duplicate: true as const,
-        existingEvidenceId: duplicate.id,
-        existingFilename: duplicate.filename,
-        message: `This file is already attached to the case as "${duplicate.filename}".`,
+        existingEvidenceId: outcome.existingEvidenceId,
+        existingFilename: outcome.existingFilename,
+        message: `This file is already attached to the case as "${outcome.existingFilename}".`,
       };
     }
-
-    const evidenceId = newEvidenceId();
-    const store = resolveEvidenceStore();
-    const storageKey = buildStorageKey({
-      ownerEmail: userEmail,
-      caseId: ownedCase.id,
-      evidenceId,
-      suffix: validation.extension.replace(/^\./, "") || "bin",
-    });
-
-    await store.put({
-      ownerEmail: userEmail,
-      caseId: ownedCase.id,
-      storageKey,
-      mimeType: validation.mimeType,
-      data,
-    });
-
-    await db.insert(schema.evidence).values({
-      id: evidenceId,
-      caseId: ownedCase.id,
-      ownerEmail: userEmail,
-      filename: safeFilename(args.filename),
-      mimeType: validation.mimeType,
-      byteSize: validation.byteSize,
-      sha256: validation.sha256,
-      storageProvider: store.id,
-      storageKey,
-      category: args.category,
-      extractionStatus: "pending",
-    });
-    await touchCase(ownedCase.id, userEmail);
 
     await recordAudit({
       ownerEmail: userEmail,
@@ -175,19 +127,19 @@ export default defineAction({
       actor,
       action: "evidence.upload",
       targetType: "evidence",
-      targetId: evidenceId,
+      targetId: outcome.evidenceId,
       // Filename, size, and detected type only. Never document contents.
-      summary: `Uploaded ${validation.mimeType} (${validation.byteSize} bytes)`,
+      summary: `Uploaded ${outcome.mimeType} (${outcome.byteSize} bytes)`,
       caller,
       runId,
     });
 
     return {
       duplicate: false as const,
-      evidenceId,
-      filename: safeFilename(args.filename),
-      mimeType: validation.mimeType,
-      byteSize: validation.byteSize,
+      evidenceId: outcome.evidenceId,
+      filename: outcome.filename,
+      mimeType: outcome.mimeType,
+      byteSize: outcome.byteSize,
       category: args.category,
       extractionStatus: "pending" as const,
     };

@@ -164,7 +164,12 @@ rejected even if it looks better in isolation.
   mid-flight while the server keeps working, and the user sees nothing.
 - **One concept, one serialiser.** `get-case` and `list-evidence` both feed the
   workspace's evidence panel. Any field the panel renders (`passageCount`,
-  `citedByFindings`) must be present on both, or the panel silently blanks.
+  `citedByFindings`, `documentType`, `classificationConfidence`,
+  `classificationCorrectedBy`) must be present on both, or the panel silently
+  blanks. A `<select>` bound to a field the action omits does not error: it
+  falls back to its first option, so a missing `documentType` made every file
+  read "Court judgment" while the stored type was correct. When you add a
+  column to the panel, add it to both actions and assert they agree.
 - **The deploy config owns schema, not the request.** A hosted request runtime
   never creates tables (`schemaIsReleaseOwned()` gates DDL), so every release
   migration must run at build time on the production branch. `netlify.toml`

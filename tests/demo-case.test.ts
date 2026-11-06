@@ -173,3 +173,63 @@ describe("demo case contradiction guarantee", () => {
     expect(graph.counts.agreements).toBeGreaterThanOrEqual(1);
   });
 });
+
+describe("load-demo-case", () => {
+  beforeEach(async () => {
+    await setupTestDatabase();
+  });
+
+  it("builds the demonstration case from the bundled documents through the real pipeline", async () => {
+    const result = await callAction<{
+      caseId: string;
+      created: boolean;
+      documents: { total: number; complete: number };
+      counts: { documents: number; relationships: number };
+    }>("load-demo-case", {}, userContext(OWNER));
+
+    expect(result.created).toBe(true);
+    expect(result.documents.total).toBe(5);
+    expect(result.documents.complete).toBe(5);
+    expect(result.counts.documents).toBe(5);
+    // Loading is deterministic and does not call a model, so it links the
+    // documents but proposes no claims. The contradiction appears only after
+    // `analyze-evidence`, which is the human-in-the-loop step the demo teaches.
+    expect(result.counts.relationships).toBeGreaterThan(0);
+
+    const stored = await callAction<{
+      case: { id: string; title: string };
+      evidence: unknown[];
+    }>("get-case", { caseId: result.caseId }, userContext(OWNER));
+    expect(stored.case.title).toContain("DEMO");
+    expect(stored.evidence).toHaveLength(5);
+
+    // The raw material the contradiction engine needs is present: the merchant
+    // email and the bank statement both carry refund reference RRF-55210.
+    const evidence = await callAction<{ passages: Array<{ text: string }> }>(
+      "get-evidence",
+      { caseId: result.caseId, evidenceId: (stored.evidence[0] as { id: string }).id },
+      userContext(OWNER),
+    );
+    expect(evidence.passages.length).toBeGreaterThan(0);
+  });
+
+  it("returns the existing case instead of creating a duplicate", async () => {
+    const first = await callAction<{ caseId: string; created: boolean }>(
+      "load-demo-case",
+      {},
+      userContext(OWNER),
+    );
+    const second = await callAction<{ caseId: string; created: boolean }>(
+      "load-demo-case",
+      {},
+      userContext(OWNER),
+    );
+
+    expect(first.created).toBe(true);
+    expect(second.created).toBe(false);
+    expect(second.caseId).toBe(first.caseId);
+
+    const listed = await callAction<{ cases: unknown[] }>("list-cases", {}, userContext(OWNER));
+    expect(listed.cases).toHaveLength(1);
+  });
+});

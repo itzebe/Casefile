@@ -1,5 +1,5 @@
 import { useActionMutation, useActionQuery } from "@agent-native/core/client/use-action";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { useState } from "react";
 
 import { StatusPill } from "@/components/casefile/badges";
@@ -78,6 +78,7 @@ function CaseRow({ item }: { item: CaseSummary }) {
 }
 
 export function CasesPage() {
+  const navigate = useNavigate();
   const [showCreate, setShowCreate] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -94,6 +95,14 @@ export function CasesPage() {
       setDescription("");
       setAmount("");
       setError(null);
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  const loadDemo = useActionMutation<{ caseId: string; created: boolean }>("load-demo-case", {
+    onSuccess: (result) => {
+      setError(null);
+      navigate(casePath(result.caseId));
     },
     onError: (err: Error) => setError(err.message),
   });
@@ -134,9 +143,19 @@ export function CasesPage() {
         <span className="text-sm text-muted-foreground">
           {cases.length} case{cases.length === 1 ? "" : "s"}
         </span>
-        <Button onClick={() => setShowCreate((open) => !open)} variant={showCreate ? "outline" : "default"}>
-          {showCreate ? "Cancel" : "New case"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => loadDemo.mutate({})}
+            disabled={loadDemo.isPending}
+            data-testid="load-demo-case"
+          >
+            {loadDemo.isPending ? "Loading demo…" : "Load demo case"}
+          </Button>
+          <Button onClick={() => setShowCreate((open) => !open)} variant={showCreate ? "outline" : "default"}>
+            {showCreate ? "Cancel" : "New case"}
+          </Button>
+        </div>
       </div>
 
       {showCreate ? (
@@ -244,9 +263,24 @@ export function CasesPage() {
             <CardTitle className="text-base">No cases yet</CardTitle>
             <CardDescription>
               Open a case, then add the documents you already have: a receipt, a bank statement, a
-              contract, or your correspondence with the other side.
+              contract, or your correspondence with the other side. Or load the demonstration case
+              to see a finished investigation first.
             </CardDescription>
           </CardHeader>
+          <CardContent>
+            <Button
+              variant="outline"
+              onClick={() => loadDemo.mutate({})}
+              disabled={loadDemo.isPending}
+              data-testid="load-demo-case-empty"
+            >
+              {loadDemo.isPending ? "Loading demo…" : "Load the demonstration case"}
+            </Button>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Five synthetic documents about a disputed refund. No real party, payment, or
+              proceeding.
+            </p>
+          </CardContent>
         </Card>
       ) : (
         <div className="space-y-3">
