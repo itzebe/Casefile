@@ -181,6 +181,35 @@ describe("extractImageFile (OCR)", () => {
     hasEngine = ocrBinaryPath() !== null;
   });
 
+  it("discovers a tesseract binary on PATH without an explicit override", async () => {
+    // Regression: OCR used to require CASEFILE_TESSERACT_PATH to be set by hand,
+    // so a machine with tesseract installed still reported every image as
+    // unreadable. Discovery must find a binary on PATH on its own. The test
+    // skips only when no engine is installed at all.
+    const { ocrBinaryPath } = await import("../server/casefile/ocr.js");
+    const { execFileSync } = await import("node:child_process");
+    let onPath: string | null = null;
+    try {
+      onPath = execFileSync("which", ["tesseract"], { encoding: "utf8" }).trim() || null;
+    } catch {
+      onPath = null;
+    }
+    if (!onPath) {
+      // No engine on this machine; the module must still answer cleanly.
+      expect(ocrBinaryPath()).toBeNull();
+      return;
+    }
+    const saved = process.env.CASEFILE_TESSERACT_PATH;
+    delete process.env.CASEFILE_TESSERACT_PATH;
+    try {
+      // A binary exists on PATH, so discovery must return it without an override.
+      expect(ocrBinaryPath()).toBe(onPath);
+    } finally {
+      if (saved === undefined) delete process.env.CASEFILE_TESSERACT_PATH;
+      else process.env.CASEFILE_TESSERACT_PATH = saved;
+    }
+  });
+
   it("reads text from a real image with the configured OCR engine", async () => {
     // Skipped rather than faked when no engine is configured: a test that
     // stubbed OCR would not prove the real path works.
