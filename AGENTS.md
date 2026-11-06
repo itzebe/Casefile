@@ -114,6 +114,30 @@ rejected even if it looks better in isolation.
   user.
 - **No paid services or infrastructure.** Local and free tiers only. Do not
   introduce a service that needs a credit card to develop or verify.
+- **Shared AI provider for judges.** Provider credentials resolve per request
+  through the scopes `user → org → workspace(org) → workspace(solo)` and then a
+  **deployment-level** fallback. Because every signup gets its own organization,
+  an org- or personal-scoped key serves only that scope; a judge in a fresh
+  organization has no provider and cannot run the investigation engine or chat.
+  The supported fix is one **deployment-level provider key** in the server
+  environment (`ANTHROPIC_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`,
+  `GROQ_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `MISTRAL_API_KEY`, or
+  `COHERE_API_KEY`). Any signed-in user with no scoped key then uses it, across
+  every organization, and usage is billed to the deployment account. This is the
+  framework's documented "app-wide fallback" for self-hosted/standalone
+  deployments. Precedence is unchanged: a user-, org-, or workspace-scoped key
+  always wins over the deployment key.
+  - This app is a **standalone** app (`agent-native.config.ts` sets no
+    `workspace.isWorkspace`/`appsJson`), so it is eligible. A production
+    **hosted workspace** runtime deliberately blocks deployment provider-key
+    fallbacks, and `tests/shared-provider.test.ts` asserts both sides of that.
+  - A Builder.io gateway pair (`BUILDER_GATEWAY_TOKEN` +
+    `BUILDER_GATEWAY_SPACE_ID`) is **not** shareable across organizations in
+    production: the framework refuses Builder-credits pairs outside a trusted
+    self-hosted or Fusion-preview runtime. Builder is per-user/per-org only.
+  - The key is server-side. It is never written to the database, never returned
+    by an API response, and never enters the browser bundle; only the provider
+    label and model are ever shown to a user.
 
 ## 5. Implementation constraints
 
