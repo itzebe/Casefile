@@ -1527,7 +1527,7 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
               ref={fileInput}
               type="file"
               multiple
-              accept=".pdf,.png,.jpg,.jpeg,.txt,.csv,.log,.md,.docx,.xlsx"
+              accept=".pdf,.png,.jpg,.jpeg,.txt,.csv,.log,.md,.docx,.xlsx,.eml"
               className="hidden"
               onChange={(event) => void onFilesChosen(event.target.files)}
             />

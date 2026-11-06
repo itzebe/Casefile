@@ -141,6 +141,7 @@ export const SUPPORTED_MIME_TYPES = [
   "text/plain",
   "text/markdown",
   "text/csv",
+  "message/rfc822",
 ] as const;
 export type SupportedMimeType = (typeof SUPPORTED_MIME_TYPES)[number];
 
@@ -158,6 +159,7 @@ export const SUPPORTED_FORMAT_LABELS: Record<SupportedMimeType, string> = {
   "text/plain": "text",
   "text/markdown": "Markdown",
   "text/csv": "CSV",
+  "message/rfc822": "email (.eml)",
 };
 
 /**

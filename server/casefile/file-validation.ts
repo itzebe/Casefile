@@ -70,6 +70,20 @@ const TEXT_EXTENSIONS = [".txt", ".text", ".log"];
 const MARKDOWN_EXTENSIONS = [".md", ".markdown"];
 const CSV_EXTENSIONS = [".csv", ".tsv"];
 
+/**
+ * Whether the bytes look like an RFC 822 message. An email must begin with one
+ * or more header fields, and the fields a person recognises (From/To/Subject/
+ * Date/Received/Message-ID) are required, so an ordinary text file named .eml
+ * is not accepted as a message on the strength of its extension alone.
+ */
+function looksLikeEmail(text: string): boolean {
+  const head = text.slice(0, 8192);
+  if (!/^[A-Za-z][A-Za-z0-9-]*:/.test(head)) return false;
+  const hasFrom = /^from:/im.test(head);
+  const hasOthers = /^(to|subject|date|received|message-id|return-path|delivered-to):/im.test(head);
+  return hasFrom && hasOthers;
+}
+
 function extensionOf(filename: string): string {
   const match = filename.toLowerCase().match(/\.[a-z0-9]+$/);
   return match ? match[0] : "";
@@ -98,6 +112,14 @@ function classifyTextLike(
     if (!bomUtf16) decodable = false;
   }
   if (!decodable) return null;
+  const head = new TextDecoder("utf-8").decode(sample);
+  // An email is recognised by its own header structure, so a .eml saved under
+  // another name is still ingested as a message rather than as loose text. This
+  // is checked before the extension-based text rules, because the header
+  // structure is more specific than "it decodes as text". A .eml that does not
+  // carry headers is not a message, and falls through to be treated as the text
+  // it actually is.
+  if (looksLikeEmail(head)) return "message/rfc822";
   const extension = extensionOf(filename);
   if (CSV_EXTENSIONS.includes(extension)) return "text/csv";
   if (MARKDOWN_EXTENSIONS.includes(extension)) return "text/markdown";
@@ -107,7 +129,6 @@ function classifyTextLike(
   // 5,000.00 USD and costs"), so a comma-and-newline test classifies an
   // ordinary letter as CSV and then mangles its numbers into columns. A real
   // delimited file has the same field count on most of its lines.
-  const head = new TextDecoder("utf-8").decode(sample);
   return looksLikeDelimited(head) ? "text/csv" : "text/plain";
 }
 
