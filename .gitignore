@@ -44,3 +44,5 @@ data/*.lock
 
 # Agent working memory (local knowledge, not product code)
 .openhands/
+.vercel
+.env*
