@@ -656,4 +656,48 @@ describe("agent-proposed relationships", () => {
     expect(row.createdBy).toBe("agent");
     expect(row.reviewStatus).toBe("proposed");
   });
+
+  it("re-running analysis replaces unreviewed proposals instead of duplicating them", async () => {
+    const caseId = await seedTwoDocuments(STATEMENT_MATCHING);
+    const { getDb, schema } = await import("./helpers/harness.js");
+    const evidenceRows = await getDb().select().from(schema.evidence);
+    const claims = evidenceRows.map((row, index) => ({
+      statement: `Proposed claim ${index + 1} for ${row.filename}.`,
+      evidenceId: row.id,
+    }));
+
+    const countProposed = async () => {
+      const rows = await getDb().select().from(schema.findings);
+      return rows.filter((r) => r.caseId === caseId && r.reviewStatus === "proposed").length;
+    };
+
+    await proposeClaims(caseId, claims);
+    const firstPass = await countProposed();
+    expect(firstPass).toBe(claims.length);
+
+    // A second pass must not stack a duplicate set on top of the first.
+    await proposeClaims(caseId, claims);
+    expect(await countProposed()).toBe(firstPass);
+
+    // A human decision survives the next analysis run.
+    const stored = await getDb().select().from(schema.findings);
+    const confirmed = stored.find((r) => r.caseId === caseId)!;
+    await callAction(
+      "update-finding",
+      { caseId, findingId: confirmed.id, reviewStatus: "confirmed" },
+      userContext(OWNER),
+    );
+
+    await proposeClaims(caseId, claims);
+    // The confirmed row is preserved and the new pass proposes a fresh set, so
+    // the proposed count stays at one set - it does not grow with each run.
+    expect(await countProposed()).toBe(firstPass);
+
+    const after = await getDb().select().from(schema.findings);
+    const stillThere = after.find((r) => r.id === confirmed.id);
+    expect(stillThere?.reviewStatus).toBe("confirmed");
+    // The reviewed row is kept in addition to the fresh proposals - exactly one
+    // extra row, not a duplicate of the whole set.
+    expect(after.length).toBe(firstPass + 1);
+  });
 });
