@@ -1078,7 +1078,7 @@ function ReportPanel({ caseId }: { caseId: string }) {
   const [message, setMessage] = useState<string | null>(null);
   const exportReport = useActionMutation("export-report");
 
-  const download = async (format: "markdown" | "html" | "docx" | "pdf") => {
+  const download = async (format: "markdown" | "html" | "docx" | "pdf" | "json" | "csv") => {
     setBusy(format);
     setMessage(null);
     try {
@@ -1154,6 +1154,22 @@ function ReportPanel({ caseId }: { caseId: string }) {
             disabled={busy !== null}
           >
             {busy === "pdf" ? "Exporting…" : "Export PDF"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void download("json")}
+            disabled={busy !== null}
+          >
+            {busy === "json" ? "Exporting…" : "Export JSON"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void download("csv")}
+            disabled={busy !== null}
+          >
+            {busy === "csv" ? "Exporting…" : "Export CSV"}
           </Button>
         </div>
         {message ? <p className="text-xs text-muted-foreground">{message}</p> : null}

@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { recordAudit, requireOwnedCase } from "../server/casefile/access.js";
 import { casefileContext } from "../server/casefile/context.js";
-import { buildReport, renderReportHtml, renderReportMarkdown } from "../server/casefile/report.js";
+import { buildReport, renderReportCsv, renderReportHtml, renderReportJson, renderReportMarkdown } from "../server/casefile/report.js";
 import { renderReportDocx } from "../server/casefile/report-docx.js";
 import { renderReportPdf } from "../server/casefile/report-pdf.js";
 
@@ -21,11 +21,11 @@ import { renderReportPdf } from "../server/casefile/report-pdf.js";
  */
 export default defineAction({
   description:
-    "Export the investigation report as markdown, HTML, DOCX, or PDF. The export preserves citations and marks proposed statements as proposed. Returns base64-encoded file content; no public URL is created.",
+    "Export the investigation report as markdown, HTML, DOCX, PDF, JSON, or CSV. The export preserves citations and marks proposed statements as proposed. JSON is the full report object; CSV is one row per statement with a citation row per source. Returns base64-encoded file content; no public URL is created.",
   schema: z.object({
     caseId: z.string().min(1).describe("The case to export a report for."),
     format: z
-      .enum(["markdown", "html", "docx", "pdf"])
+      .enum(["markdown", "html", "docx", "pdf", "json", "csv"])
       .default("markdown")
       .describe("The export format."),
   }),
@@ -54,6 +54,14 @@ export default defineAction({
       filename = `casefile-${safeTitle}.pdf`;
       mimeType = "application/pdf";
       bytes = renderReportPdf(report);
+    } else if (args.format === "json") {
+      filename = `casefile-${safeTitle}.json`;
+      mimeType = "application/json";
+      bytes = new TextEncoder().encode(renderReportJson(report));
+    } else if (args.format === "csv") {
+      filename = `casefile-${safeTitle}.csv`;
+      mimeType = "text/csv";
+      bytes = new TextEncoder().encode(renderReportCsv(report));
     } else {
       filename = `casefile-${safeTitle}.md`;
       mimeType = "text/markdown";

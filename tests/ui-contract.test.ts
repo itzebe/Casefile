@@ -115,6 +115,12 @@ describe("classification, readiness, and report wiring", () => {
     expect(workspaceSource).toContain("Export HTML");
     expect(workspaceSource).toContain("Export Word");
     expect(workspaceSource).toContain("Export PDF");
+    expect(workspaceSource).toContain("Export JSON");
+    expect(workspaceSource).toContain("Export CSV");
+  });
+
+  it("offers .eml in the evidence picker", () => {
+    expect(workspaceSource).toContain(".eml");
   });
 
   it("downloads an export through a blob rather than a public URL", () => {
