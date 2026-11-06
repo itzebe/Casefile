@@ -88,7 +88,11 @@ rejected even if it looks better in isolation.
 8. **No placeholder destinations.** Do not ship a link or control the app does
    not implement.
 9. **Accessibility is not a pass.** Every interactive control is keyboard
-   reachable and named; color is never the only signal.
+   reachable and named; color is never the only signal. A control a person
+   aims at is at least 24x24 CSS pixels (WCAG 2.5.8) — a block or list
+   control needs `py-1` on its base height. Inline links inside a sentence are
+   exempt. `tests/ui-contract.test.ts` enforces this; keep the exemption list
+   explicit rather than widening the rule.
 10. **The case file outlives the session.** Anything a user would expect to
     find later is persisted, not held in component state.
 
