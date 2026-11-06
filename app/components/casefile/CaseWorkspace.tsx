@@ -368,7 +368,7 @@ function InvestigationBrief({
               {item.anchor ? (
                 <button
                   type="button"
-                  className="rounded underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="inline-flex min-w-6 items-center justify-center rounded -mx-1 px-1 py-0.5 -my-0.5 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   onClick={() => onJump(item.anchor!)}
                 >
                   {item.value}
