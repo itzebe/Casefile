@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { callAction, setupTestDatabase, userContext } from "./helpers/harness.js";
+import { DOCUMENT_TYPES } from "../shared/casefile/types.js";
 import {
   SCENARIOS,
   SCENARIO_CONTRACT,
@@ -331,6 +332,45 @@ describe("acceptance scenarios", () => {
       }>("build-case-graph", { caseId }, userContext(OWNER));
       const shared = graph.relationships.filter((r) => r.relationType === "same_identifier");
       expect(shared.some((r) => (r.matchKey ?? "").includes("pol778812"))).toBe(true);
+    });
+  });
+
+  describe("get-case evidence contract", () => {
+    /**
+     * Regression: the evidence panel renders a document-type `<select>` bound to
+     * `item.documentType`. `get-case` omitted the classification fields, so the
+     * select fell back to its first option and every file read "Court judgment"
+     * while the stored type was correct. The workspace reads these fields from
+     * get-case, so get-case must return them.
+     */
+    it("returns the classification fields the evidence panel binds to", async () => {
+      const { caseId } = await runScenario(SCENARIO_PAYMENT);
+      const detail = await callAction<{
+        evidence: Array<{
+          id: string;
+          filename: string;
+          documentType: string;
+          classificationConfidence: string | null;
+          classificationCorrectedBy: string | null;
+        }>;
+      }>("get-case", { caseId }, userContext(OWNER));
+
+      expect(detail.evidence).toHaveLength(SCENARIO_PAYMENT.documents.length);
+      for (const item of detail.evidence) {
+        expect(item.documentType).toBeTruthy();
+        expect(DOCUMENT_TYPES).toContain(item.documentType);
+        expect(["high", "medium", "low"]).toContain(item.classificationConfidence);
+        // Nothing has been corrected by a person yet.
+        expect(item.classificationCorrectedBy).toBeNull();
+      }
+
+      // The values must match what list-evidence reports for the same files, or
+      // the two surfaces disagree about the same document.
+      const listed = await listEvidence(caseId);
+      const byId = new Map(listed.evidence.map((entry) => [entry.id, entry]));
+      for (const item of detail.evidence) {
+        expect(byId.get(item.id)?.documentType).toBe(item.documentType);
+      }
     });
   });
 });
