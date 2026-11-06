@@ -163,6 +163,53 @@ describe("investigation brief and navigation wiring", () => {
   });
 });
 
+describe("analysis timeout hierarchy", () => {
+  /**
+   * The hosting platform stops a function at 300s. Three budgets have to nest
+   * under that limit, or a long analysis dies in a way the browser cannot
+   * explain: the platform kill and the client's own abort land together, and
+   * the click looks like it did nothing at all.
+   */
+  const PLATFORM_FUNCTION_LIMIT_MS = 300_000;
+  const modelSource = readFileSync(
+    fileURLToPath(new URL("../server/casefile/model.ts", import.meta.url)),
+    "utf8",
+  );
+
+  it("keeps the client's analysis budget under the platform function limit", async () => {
+    const { ANALYSIS_TIMEOUT_MS } = await import(
+      "../app/components/casefile/CaseWorkspace.tsx"
+    );
+    expect(ANALYSIS_TIMEOUT_MS).toBeLessThan(PLATFORM_FUNCTION_LIMIT_MS);
+  });
+
+  it("keeps the server's model budget under the platform function limit", () => {
+    const match = modelSource.match(/const DEFAULT_TIMEOUT_MS = ([\d_]+)/);
+    expect(match).not.toBeNull();
+    const serverModelTimeoutMs = Number(match![1].replace(/_/g, ""));
+    expect(serverModelTimeoutMs).toBeLessThan(PLATFORM_FUNCTION_LIMIT_MS);
+  });
+});
+
+describe("analysis progress is visible", () => {
+  it("shows how long the running analysis has been going", () => {
+    // A button that reads the same at second 1 and second 120 is
+    // indistinguishable from a click that never registered.
+    expect(workspaceSource).toContain("analysisStartedAt");
+    expect(workspaceSource).toContain("analysisElapsed");
+    expect(workspaceSource).toContain("Elapsed ${analysisElapsed}s");
+  });
+
+  it("clears a previous result and error when a new analysis starts", () => {
+    const onClick = workspaceSource.slice(
+      workspaceSource.indexOf("setAnalysisStartedAt(Date.now())") - 200,
+      workspaceSource.indexOf("setAnalysisStartedAt(Date.now())"),
+    );
+    expect(onClick).toContain("setNotice(null)");
+    expect(onClick).toContain("setError(null)");
+  });
+});
+
 describe("landing page is product-specific", () => {
   const homeSource = readFileSync(
     fileURLToPath(new URL("../app/components/home/HomePage.tsx", import.meta.url)),

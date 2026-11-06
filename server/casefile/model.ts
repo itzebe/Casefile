@@ -43,7 +43,15 @@ export class ModelOutputError extends ActionContractError {
 }
 
 const APP_ID = "casefile";
-const DEFAULT_TIMEOUT_MS = 8 * 60_000;
+/**
+ * The model call is given 260s. The hosting platform stops a function at 300s,
+ * so a budget comfortably under that leaves room for the database read,
+ * persistence, and the response itself. When the budget is spent this module
+ * raises its own typed "model timed out" error, which reaches the browser as a
+ * stated reason, instead of the platform killing the function and surfacing an
+ * opaque network failure with nothing recorded.
+ */
+const DEFAULT_TIMEOUT_MS = 260_000;
 
 export interface RunModelOptions {
   systemPrompt: string;

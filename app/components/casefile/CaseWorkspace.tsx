@@ -191,9 +191,12 @@ const EVIDENCE_CATEGORIES = [
 /**
  * The client aborts an action after 60s by default. Analysis runs a model over
  * every extracted passage and routinely takes longer, so it is given its own
- * budget instead of failing mid-flight.
+ * budget instead of failing mid-flight. The budget stays under the hosting
+ * platform's 300s function limit: at exactly the limit the request would be
+ * killed at the same instant the client gave up, and the two failures are
+ * indistinguishable from a click that never registered.
  */
-export const ANALYSIS_TIMEOUT_MS = 5 * 60_000;
+export const ANALYSIS_TIMEOUT_MS = 4 * 60_000;
 
 function humanBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -1158,6 +1161,12 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [category, setCategory] = useState<EvidenceCategory>("receipt");
+  // Wall-clock start of the running analysis, and the elapsed seconds derived
+  // from it. Analysis runs a model for minutes, so the pending state has to
+  // visibly move; a button that reads the same at second 1 and second 120 is
+  // indistinguishable from a click that did nothing.
+  const [analysisStartedAt, setAnalysisStartedAt] = useState<number | null>(null);
+  const [analysisElapsed, setAnalysisElapsed] = useState(0);
 
   const detail = useActionQuery<CaseDetail>("get-case", { caseId });
   const status = useActionQuery<InvestigationStatus>("get-investigation-status", { caseId });
@@ -1194,6 +1203,20 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
     void timeline.refetch();
     void storedGraph.refetch();
   };
+
+  // Tick once a second while an analysis is in flight so the button can show how
+  // long it has been running. The interval is cleared the moment the run ends,
+  // so nothing keeps re-rendering afterwards.
+  useEffect(() => {
+    if (analysisStartedAt === null) {
+      setAnalysisElapsed(0);
+      return;
+    }
+    const update = () => setAnalysisElapsed(Math.floor((Date.now() - analysisStartedAt) / 1000));
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [analysisStartedAt]);
 
   const buildGraph = useActionMutation("build-case-graph", {
     onSuccess: (result: GraphResult) => {
@@ -1244,16 +1267,22 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
   const analyze = useActionMutation("analyze-evidence", {
     // Analysis runs a model over every extracted passage, which routinely
     // exceeds the client's 60s default. Without this the request is aborted
-    // while the server is still working, and the proposals are lost.
+    // while the server is still working, and the proposals are lost. The value
+    // sits below the hosting platform's 300s function limit, so a slow run
+    // ends with a stated error rather than a platform kill.
     timeoutMs: ANALYSIS_TIMEOUT_MS,
     onSuccess: (result: { claimsProposed: number; eventsProposed: number }) => {
+      setAnalysisStartedAt(null);
       setNotice(
         `Proposed ${result.claimsProposed} claim(s) and ${result.eventsProposed} event(s). ` +
           "Nothing is confirmed until you confirm it.",
       );
       invalidate();
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (err: Error) => {
+      setAnalysisStartedAt(null);
+      setError(err.message);
+    },
   });
 
   const updateFinding = useActionMutation("update-finding", {
@@ -1536,13 +1565,20 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
             {extract.isPending ? "Reading…" : "Read the documents"}
           </Button>
           <Button
-            onClick={() => analyze.mutate({ caseId })}
+            onClick={() => {
+              setNotice(null);
+              setError(null);
+              setAnalysisStartedAt(Date.now());
+              analyze.mutate({ caseId });
+            }}
             disabled={analyze.isPending || investigation?.evidence.extracted === 0}
           >
             {analyze.isPending ? "Analysing…" : "Analyse the evidence"}
           </Button>
-          <span className="text-xs text-muted-foreground">
-            Analysis proposes; it never confirms.
+          <span className="text-xs text-muted-foreground" aria-live="polite">
+            {analyze.isPending
+              ? `Analysis is running on every extracted passage. Elapsed ${analysisElapsed}s — a long case can take a few minutes; leave this page open.`
+              : "Analysis proposes; it never confirms."}
           </span>
         </div>
       </section>
