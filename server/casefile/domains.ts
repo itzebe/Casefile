@@ -26,7 +26,14 @@ import { detectAmounts, detectDates } from "./entities.js";
  * exact sentence that produced each label.
  */
 
-export const DOMAINS = ["legal", "financial", "contract", "medical", "research"] as const;
+export const DOMAINS = [
+  "legal",
+  "financial",
+  "contract",
+  "medical",
+  "research",
+  "general",
+] as const;
 export type Domain = (typeof DOMAINS)[number];
 
 export const DOMAIN_LABELS: Record<Domain, string> = {
@@ -35,6 +42,7 @@ export const DOMAIN_LABELS: Record<Domain, string> = {
   contract: "Contract",
   medical: "Medical",
   research: "Research",
+  general: "General",
 };
 
 /**
@@ -74,7 +82,13 @@ export type DomainRole =
   | "research-method"
   | "research-result"
   | "source-reference"
-  | "publication-date";
+  | "publication-date"
+  // general (domain-neutral)
+  | "recorded-fact"
+  | "stated-belief"
+  | "instruction"
+  | "commitment"
+  | "identified-question";
 
 export const ROLE_LABELS: Record<DomainRole, string> = {
   "judicial-finding": "Judicial finding",
@@ -105,6 +119,11 @@ export const ROLE_LABELS: Record<DomainRole, string> = {
   "research-result": "Research result",
   "source-reference": "Source reference",
   "publication-date": "Publication date",
+  "recorded-fact": "Recorded fact",
+  "stated-belief": "Stated belief",
+  instruction: "Instruction",
+  commitment: "Commitment",
+  "identified-question": "Open question",
 };
 
 export interface DomainFinding {
@@ -386,6 +405,57 @@ const RESEARCH_RULES: DomainRule[] = [
   },
 ];
 
+/**
+ * Domain-neutral rules. These are the "general documents" mode: they name what
+ * a sentence is doing without asserting a field. They are kept out of
+ * `ALL_RULES` and consulted only when no specialist rule fires, so a legal
+ * judgment is not also labelled a generic "recorded fact" and a financial
+ * statement is not also labelled a generic "commitment". A general label is
+ * always the weakest claim the engine can make about a sentence.
+ */
+const GENERAL_RULES: DomainRule[] = [
+  {
+    domain: "general",
+    role: "instruction",
+    re: /\b(?:please|kindly|you (?:must|should|are required to)|i (?:direct|instruct|require) (?:you|that)|instructions? (?:are|is)|hereby instructed)\b/i,
+    priority: 6,
+    confidence: "medium",
+    rule: "an instruction to act",
+  },
+  {
+    domain: "general",
+    role: "commitment",
+    re: /\b(?:i (?:will|shall|promise|undertake|agree to)|we (?:will|shall|promise|undertake|agree to)|(?:will|shall) (?:deliver|pay|provide|send|complete|arrange)|agreed to|undertakes? to)\b/i,
+    priority: 5,
+    confidence: "medium",
+    rule: "a promise or undertaking",
+  },
+  {
+    domain: "general",
+    role: "stated-belief",
+    re: /\b(?:i (?:believe|think|understand|assume|expect|recall)|we (?:believe|think|understand|assume|expect|recall)|in my (?:view|opinion)|it (?:seems|appears) (?:to me |that )|as far as i (?:know|am aware))\b/i,
+    priority: 4,
+    confidence: "low",
+    rule: "a stated belief or recollection",
+  },
+  {
+    domain: "general",
+    role: "identified-question",
+    re: /\b(?:unclear|uncertain|not (?:known|clear)|remains? (?:unclear|unknown|open)|question of|unresolved|to be (?:confirmed|determined|established)|cannot be (?:confirmed|determined))\b/i,
+    priority: 3,
+    confidence: "low",
+    rule: "an open or unresolved point",
+  },
+  {
+    domain: "general",
+    role: "recorded-fact",
+    re: /\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}[\/.]\d{1,2}[\/.]\d{2,4}|(?:was|were|has been|have been|is|are) (?:sent|received|signed|issued|recorded|dated|created|paid|completed))\b/i,
+    priority: 2,
+    confidence: "low",
+    rule: "a dated or state record",
+  },
+];
+
 const ALL_RULES: DomainRule[] = [
   ...LEGAL_RULES,
   ...FINANCIAL_RULES,
@@ -450,17 +520,31 @@ export function analyzeDomainPassages(passages: DomainPassageInput[]): DomainFin
   for (const passage of passages) {
     const sentences = splitSentences(passage.text);
     sentences.forEach((sentence, index) => {
-      const matches = ALL_RULES.filter((rule) => rule.re.test(sentence)).sort(
+      const specialist = ALL_RULES.filter((rule) => rule.re.test(sentence)).sort(
         (a, b) => b.priority - a.priority,
       );
-      if (matches.length === 0) return;
+      // A financial rule needs a number to be about: "received" in prose is not
+      // a receipt. A rule that matches the words but has no amount to apply to
+      // does not count as having recognised the sentence, so the sentence is
+      // still eligible for a domain-neutral label.
+      const applicableSpecialist = specialist.filter(
+        (rule) => !(rule.domain === "financial" && detectAmounts(sentence).length === 0),
+      );
+      // The domain-neutral rules are the fallback: they apply only when no
+      // field-specific rule recognised the sentence, so a general label never
+      // competes with, or dilutes, a specialist one.
+      const applicable =
+        applicableSpecialist.length > 0
+          ? applicableSpecialist
+          : GENERAL_RULES.filter((rule) => rule.re.test(sentence));
+      if (applicable.length === 0) return;
 
       // A sentence can carry more than one distinct fact: "The supplier shall
       // deliver by 30 June" states an obligation *and* a deadline. Emit the
       // top rule per (domain, role), so a sentence is not collapsed to one
       // label, while a role is not duplicated from two overlapping rules.
       const seenRoles = new Set<string>();
-      for (const chosen of matches) {
+      for (const chosen of applicable) {
         const roleKey = `${chosen.domain}:${chosen.role}`;
         if (seenRoles.has(roleKey)) continue;
 
@@ -469,8 +553,8 @@ export function analyzeDomainPassages(passages: DomainPassageInput[]): DomainFin
           minor: amount.minor,
           currency: amount.currency,
         }));
-        // A financial role needs a number to be about, otherwise "received" in
-        // prose would be mislabelled as an amount.
+        // Belt and braces: the filter above already removed a financial rule
+        // with no amount, but never emit a financial label without a number.
         if (chosen.domain === "financial" && amounts.length === 0) continue;
         seenRoles.add(roleKey);
 
