@@ -20,11 +20,17 @@ fields.
 | Last name | yes | (submitter's name) |
 | Email | yes | (submitter's email) |
 | Project name | yes | CASEFILE |
-| Project description | yes | see section 2 below |
+| Project description | yes | see section 2 below — **must include the pre-existing-work disclosure and team names** |
 | Project or GitHub URL | optional | https://github.com/itzebe/Casefile |
 | Public Clips recording URL | yes | record per section 5, then paste the link |
 | Slides URL | optional | leave blank (the demo is the argument) |
 | Agree to Official Rules | yes | check |
+
+The description field's own placeholder reads: *"What it does, how it uses
+Agent-Native, any pre-existing work, templates, or third-party assets and what
+changed during the event, and the names of everyone on your team"* — so the
+disclosure is not optional. Section 2 ends with the disclosure paragraph and a
+team line; fill in the team names before submitting.
 
 ## 2. Project description (paste-ready)
 
@@ -62,6 +68,36 @@ allegation differently from a finding. The payment demonstration is shaped so
 the engine finds a genuine contradiction on its own: the merchant's email and
 the bank statement both carry refund reference RRF-55210 but state different
 amounts, and the customer denies the refund was ever made.
+
+### Pre-existing work, templates, and third-party assets (disclosure)
+
+- **Starting point.** CASEFILE was scaffolded on **Nov 4, 2026** from the
+  official Agent-Native standalone **chat** template —
+  `npx @agent-native/core@latest create casefile --standalone --template chat`.
+  That scaffold is the repository's first commit (`8ab7206`) and it is the only
+  pre-existing code. Everything from the second commit on is CASEFILE's own
+  work, written during the hackathon window (Nov 4–7, 2026; 56 commits).
+- **Framework.** `@agent-native/core` 0.223.0, `@agent-native/agentkit`,
+  `@agent-native/toolkit`, `@agent-native/otel`. Used as published; not vendored
+  or modified.
+- **Third-party libraries.** The chat template's dependency set (React 19,
+  React Router 8, Tailwind 4, Radix UI, `better-auth`, Drizzle, and others), the
+  AI SDK provider packages (`@ai-sdk/*`, `@openrouter/ai-sdk-provider`,
+  `ai-sdk-ollama`), `@electric-sql/pglite`, `pdfjs-dist`, `postgres`, and
+  `@fontsource-variable/inter`. All are unmodified upstream packages.
+- **Model.** The agent runs on Groq's free tier (`AGENT_MODEL=openai/gpt-oss-20b`).
+- **Data.** Every document in the two demonstration cases is synthetic and
+  written for this project. No real client data, and no licensed third-party
+  content, is included.
+- **What changed during the event.** The entire product: the case/document
+  domain, the 42 actions, the extraction and analysis pipeline, the graph and
+  contradiction logic, the review workflow, the report and export, and the
+  tests.
+
+### Team
+
+Solo entry — **Marvin Jones** (GitHub `itzebe`). *Confirm the exact name to put
+on the form before submitting.*
 
 ## 3. How it uses Agent-Native
 
