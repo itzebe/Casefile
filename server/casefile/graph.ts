@@ -95,6 +95,12 @@ export type GapKind =
 export interface GapRecord {
   id: string;
   kind: GapKind;
+  /**
+   * Stable identity of this gap, derived from its kind and the thing it is
+   * about. The positional `id` above changes when the gap set changes; a
+   * reviewer's verdict must survive that, so it is keyed on this instead.
+   */
+  gapKey: string;
   /** What is missing from the record. */
   missing: string;
   /** The claim or event this gap affects, if any. */
@@ -453,6 +459,17 @@ export function findEvidenceGaps(input: {
   const gaps: GapRecord[] = [];
   let counter = 0;
   const nextId = () => `gap_${(counter += 1)}`;
+  /**
+   * A gap's stable identity. Two runs over the same record must produce the same
+   * key so a reviewer's verdict sticks, and a gap about a different finding must
+   * produce a different key so verdicts do not bleed between them. The subject is
+   * the finding id when there is one, else a slice of the passage text the gap
+   * concerns - a positional index would move when the gap set changes.
+   */
+  const gapKey = (
+    kind: GapKind,
+    subject: string | null | undefined,
+  ): string => `${kind}:${(subject ?? "case").slice(0, 160)}`;
 
   const corroborated = new Map<string, number>();
   for (const comparison of input.comparisons) {
@@ -470,6 +487,7 @@ export function findEvidenceGaps(input: {
       gaps.push({
         id: nextId(),
         kind: "unsupported_claim",
+        gapKey: gapKey("unsupported_claim", finding.id),
         missing: "Any source passage for this assertion.",
         affectsFindingId: finding.id,
         affectsStatement: finding.statement,
@@ -490,6 +508,7 @@ export function findEvidenceGaps(input: {
         gaps.push({
           id: nextId(),
           kind: "amount_without_transaction",
+          gapKey: gapKey("amount_without_transaction", finding.id),
           missing: "A transaction record matching the asserted amount.",
           affectsFindingId: finding.id,
           affectsStatement: finding.statement,
@@ -504,6 +523,7 @@ export function findEvidenceGaps(input: {
         gaps.push({
           id: nextId(),
           kind: "single_source_claim",
+          gapKey: gapKey("single_source_claim", finding.id),
           missing: "A second, independent source for this assertion.",
           affectsFindingId: finding.id,
           affectsStatement: finding.statement,
@@ -521,6 +541,7 @@ export function findEvidenceGaps(input: {
         gaps.push({
           id: nextId(),
           kind: "conflicting_dates",
+          gapKey: gapKey("conflicting_dates", finding.id),
           missing: "A single agreed date for this event.",
           affectsFindingId: finding.id,
           affectsStatement: finding.statement,
@@ -535,6 +556,7 @@ export function findEvidenceGaps(input: {
         gaps.push({
           id: nextId(),
           kind: "undated_event",
+          gapKey: gapKey("undated_event", finding.id),
           missing: "A date for this event.",
           affectsFindingId: finding.id,
           affectsStatement: finding.statement,
@@ -556,6 +578,7 @@ export function findEvidenceGaps(input: {
       gaps.push({
         id: nextId(),
         kind: "obligation_without_performance",
+        gapKey: gapKey("obligation_without_performance", obligation.text),
         missing: "Evidence that a stated obligation was performed.",
         affectsFindingId: null,
         affectsStatement: obligation.text.slice(0, 200),

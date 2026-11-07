@@ -298,3 +298,77 @@ export const relationships = pgTable(
     index("casefile_relationships_owner_idx").on(table.ownerEmail),
   ],
 );
+
+/**
+ * Investigator notes.
+ *
+ * A note is the human's own record, so it is never rewritten by extraction or
+ * analysis: only `update-note` changes it, and it carries its own edit history.
+ * `findingId` optionally anchors a note to a finding so the workspace can show
+ * a note beside the thing it is about, without the note becoming part of the
+ * finding's evidence.
+ */
+export const investigationNotes = pgTable(
+  "casefile_investigation_notes",
+  {
+    id: text("id").primaryKey(),
+    caseId: text("case_id").notNull(),
+    ownerEmail: text("owner_email").notNull(),
+    // Optional anchor to a finding, so a note can sit beside the row it concerns.
+    findingId: text("finding_id"),
+    body: text("body").notNull(),
+    // open | resolved - a note can be a running thread or a closed question.
+    status: text("status").notNull().default("open"),
+    // Set when a person edits the note, so an edit is attributable.
+    editedBy: text("edited_by"),
+    editedAt: text("edited_at"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`now()`),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => [
+    index("casefile_notes_case_idx").on(table.caseId, table.updatedAt),
+    index("casefile_notes_owner_idx").on(table.ownerEmail),
+  ],
+);
+
+/**
+ * A human's decision about an evidence gap.
+ *
+ * Gaps are derived, not stored: the graph recomputes them on every read, so a
+ * gap has no row to update. Its identity is therefore `gapKey`, a stable string
+ * derived from the gap's own shape (kind plus the subject it concerns), and this
+ * table records only the reviewer's verdict on that key. A gap the engine no
+ * longer reports keeps its verdict row, which is harmless and means a gap that
+ * reappears reads as already reviewed rather than silently reset.
+ */
+export const gapReviews = pgTable(
+  "casefile_gap_reviews",
+  {
+    id: text("id").primaryKey(),
+    caseId: text("case_id").notNull(),
+    ownerEmail: text("owner_email").notNull(),
+    // Stable identity of the derived gap: `${kind}:${subject}`.
+    gapKey: text("gap_key").notNull(),
+    gapKind: text("gap_kind").notNull(),
+    // open | resolved | unresolved | not_applicable
+    status: text("status").notNull().default("open"),
+    note: text("note"),
+    reviewedBy: text("reviewed_by").notNull(),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`now()`),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => [
+    // One verdict per gap per case: a second review updates the first rather
+    // than stacking a second opinion the UI would have to reconcile.
+    uniqueIndex("casefile_gap_reviews_case_key_uidx").on(table.caseId, table.gapKey),
+    index("casefile_gap_reviews_owner_idx").on(table.ownerEmail),
+  ],
+);

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { requireOwnedCase } from "../server/casefile/access.js";
 import { casefileContext } from "../server/casefile/context.js";
 import { buildCaseGraph } from "../server/casefile/graph.js";
+import { attachGapReviews } from "../server/casefile/investigation.js";
 
 /**
  * Reports what is missing from a case's record.
@@ -26,18 +27,21 @@ export default defineAction({
     const ownedCase = await requireOwnedCase(args.caseId, userEmail);
 
     const graph = await buildCaseGraph(ownedCase.id, userEmail, { persist: false });
+    const gaps = await attachGapReviews(ownedCase.id, userEmail, graph.gaps);
 
     return {
       caseId: ownedCase.id,
-      gaps: graph.gaps,
+      gaps,
       counts: {
-        total: graph.gaps.length,
-        byKind: graph.gaps.reduce<Record<string, number>>((acc, gap) => {
+        total: gaps.length,
+        reviewed: gaps.filter((gap) => gap.reviewStatus !== "open").length,
+        open: gaps.filter((gap) => gap.reviewStatus === "open").length,
+        byKind: gaps.reduce<Record<string, number>>((acc, gap) => {
           acc[gap.kind] = (acc[gap.kind] ?? 0) + 1;
           return acc;
         }, {}),
       },
-      note: "A gap means the record does not currently establish something. It is not a finding that the event did not occur.",
+      note: "A gap means the record does not currently establish something. It is not a finding that the event did not occur. reviewStatus is a human verdict on the gap, stored against its stable gapKey.",
     };
   },
 });

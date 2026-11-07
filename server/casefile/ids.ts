@@ -16,3 +16,5 @@ export const newFindingId = () => makeId("find");
 export const newCitationId = () => makeId("cite");
 export const newRelationshipId = () => makeId("rel");
 export const newAuditId = () => makeId("audit");
+export const newNoteId = () => makeId("note");
+export const newGapReviewId = () => makeId("gap");

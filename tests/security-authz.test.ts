@@ -117,6 +117,11 @@ describe("authentication", () => {
       ["list-activity", { caseId }],
       ["read-case-graph", { caseId }],
       ["get-investigation-status", { caseId }],
+      ["list-notes", { caseId }],
+      ["update-note", { caseId, body: "note" }],
+      ["review-gap", { caseId, gapKey: "unsupported_claim:x", status: "resolved" }],
+      ["retry-extraction", { caseId }],
+      ["search-case", { query: "receipt" }],
     ];
     for (const [action, args] of protectedCalls) {
       await expect(
@@ -173,6 +178,11 @@ describe("case isolation", () => {
       ["export-report", { caseId, format: "docx" }],
       ["extract-evidence", { caseId }],
       ["analyze-evidence", { caseId }],
+      ["list-notes", { caseId }],
+      ["update-note", { caseId, body: "note" }],
+      ["review-gap", { caseId, gapKey: "unsupported_claim:x", status: "resolved" }],
+      ["retry-extraction", { caseId }],
+      ["search-case", { query: "receipt", caseId }],
     ];
     for (const [action, args] of forbidden) {
       await expect(

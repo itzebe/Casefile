@@ -4,6 +4,7 @@ import { z } from "zod";
 import { requireOwnedCase } from "../server/casefile/access.js";
 import { casefileContext } from "../server/casefile/context.js";
 import { buildCaseGraph, readRelationships } from "../server/casefile/graph.js";
+import { attachGapReviews } from "../server/casefile/investigation.js";
 
 /**
  * Reads a case's cross-document view without changing anything.
@@ -29,13 +30,16 @@ export default defineAction({
 
     const graph = await buildCaseGraph(ownedCase.id, userEmail, { persist: false });
     const relationships = await readRelationships(ownedCase.id, userEmail);
+    // Gaps are derived, so their reviewer verdicts are merged in here; the UI
+    // shows each gap's review state beside it.
+    const gaps = await attachGapReviews(ownedCase.id, userEmail, graph.gaps);
 
     return {
       caseId: ownedCase.id,
       counts: { ...graph.counts, relationships: relationships.length },
       relationships,
       comparisons: graph.comparisons,
-      gaps: graph.gaps,
+      gaps,
       note: "Relationships and comparisons are proposals. Review them before relying on any of them.",
     };
   },

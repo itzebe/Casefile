@@ -35,6 +35,17 @@ function formatAmount(amountMinor: number | null, currency: string | null): stri
   return currency ? `${value} ${currency}` : value;
 }
 
+interface SearchResult {
+  results: {
+    cases?: Array<{ id: string; title: string; status: string }>;
+    documents?: Array<{ id: string; caseId: string; filename: string }>;
+    passages?: Array<{ id: string; caseId: string; evidenceId: string; ref: string; filename: string; excerpt: string }>;
+    findings?: Array<{ id: string; caseId: string; kind: string; statement: string }>;
+    notes?: Array<{ id: string; caseId: string; body: string }>;
+  };
+  total: number;
+}
+
 function CaseRow({ item }: { item: CaseSummary }) {
   const amount = formatAmount(item.amountMinor, item.currency);
   const pending = item.evidenceCount - item.extractedCount;
@@ -86,8 +97,14 @@ export function CasesPage() {
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState("USD");
   const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
 
   const query = useActionQuery<{ cases: CaseSummary[] }>("list-cases", {});
+  const search = useActionQuery<SearchResult>(
+    "search-case",
+    { query: searchTerm.trim(), limit: 20 },
+    { enabled: searchTerm.trim().length >= 2 },
+  );
   const create = useActionMutation<{ id: string }>("create-case", {
     onSuccess: (result) => {
       setShowCreate(false);
@@ -267,6 +284,67 @@ export function CasesPage() {
                 Nothing here is sent to a model.
               </span>
             </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <div className="mb-6 space-y-2">
+        <Label htmlFor="case-search">Search your cases</Label>
+        <Input
+          id="case-search"
+          value={searchTerm}
+          onChange={(event) => setSearchTerm(event.target.value)}
+          placeholder="Search case titles, documents, passages, findings and notes…"
+          data-testid="case-search-input"
+        />
+        <p className="text-xs text-muted-foreground">
+          Searches only your own cases. Results link straight to the document, passage, finding or
+          note they came from.
+        </p>
+      </div>
+
+      {searchTerm.trim().length >= 2 ? (
+        <Card className="mb-6" data-testid="search-results">
+          <CardHeader>
+            <CardTitle className="text-base">Search results</CardTitle>
+            <CardDescription>
+              {search.isFetching
+                ? "Searching…"
+                : `${search.data?.total ?? 0} match(es) for “${searchTerm.trim()}”.`}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {(search.data?.results.cases ?? []).map((item) => (
+              <Link key={`c-${item.id}`} to={casePath(item.id)} className="block underline">
+                Case: {item.title}
+              </Link>
+            ))}
+            {(search.data?.results.documents ?? []).map((item) => (
+              <Link key={`d-${item.id}`} to={casePath(item.caseId)} className="block underline">
+                Document: {item.filename}
+              </Link>
+            ))}
+            {(search.data?.results.passages ?? []).map((item) => (
+              <Link key={`p-${item.id}`} to={casePath(item.caseId)} className="block">
+                <span className="underline">{item.filename}</span>{" "}
+                <span className="text-muted-foreground">({item.ref})</span> — {item.excerpt}
+              </Link>
+            ))}
+            {(search.data?.results.findings ?? []).map((item) => (
+              <Link key={`f-${item.id}`} to={casePath(item.caseId)} className="block">
+                <span className="text-muted-foreground">{item.kind}:</span>{" "}
+                <span className="underline">{item.statement}</span>
+              </Link>
+            ))}
+            {(search.data?.results.notes ?? []).map((item) => (
+              <Link key={`n-${item.id}`} to={casePath(item.caseId)} className="block">
+                <span className="text-muted-foreground">Note:</span>{" "}
+                <span className="underline">{item.body}</span>
+              </Link>
+            ))}
+            {search.data && search.data.total === 0 ? (
+              <p className="text-muted-foreground">Nothing matched that term.</p>
+            ) : null}
           </CardContent>
         </Card>
       ) : null}

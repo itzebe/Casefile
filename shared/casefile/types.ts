@@ -210,6 +210,25 @@ export const COMPARISON_VERDICTS = [
 ] as const;
 export type ComparisonVerdict = (typeof COMPARISON_VERDICTS)[number];
 
+/**
+ * A reviewer's verdict on a derived evidence gap. Gaps are computed on every
+ * read, so a verdict is keyed to the gap's stable `gapKey`, not to a row.
+ *
+ * `resolved` means the record now establishes the point; `unresolved` means it
+ * still does not; `not_applicable` means the question does not bear on this
+ * investigation. `open` is the absence of any verdict.
+ */
+export const GAP_REVIEW_STATUSES = [
+  "open",
+  "resolved",
+  "unresolved",
+  "not_applicable",
+] as const;
+export type GapReviewStatus = (typeof GAP_REVIEW_STATUSES)[number];
+
+export const NOTE_STATUSES = ["open", "resolved"] as const;
+export type NoteStatus = (typeof NOTE_STATUSES)[number];
+
 export const MAX_EVIDENCE_BYTES = 8 * 1024 * 1024; // 8 MB per file
 export const MAX_EVIDENCE_PER_CASE = 100;
 export const MAX_BASE64_BYTES = 12 * 1024 * 1024; // encoded payload ceiling
@@ -248,6 +267,10 @@ export const HUMAN_LABELS: Record<string, string> = {
   contradiction: "Contradiction",
   unrelated: "Unrelated",
   insufficient_information: "Insufficient information",
+  // Gap review statuses
+  resolved: "Resolved",
+  unresolved: "Unresolved",
+  not_applicable: "Not applicable",
 };
 
 export function label(value: string | null | undefined): string {
