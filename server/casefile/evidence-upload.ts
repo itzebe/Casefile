@@ -94,19 +94,67 @@ export async function storeEvidenceFile(input: {
     data: input.data,
   });
 
-  await db.insert(schema.evidence).values({
-    id: evidenceId,
-    caseId: input.caseId,
-    ownerEmail: input.ownerEmail,
-    filename: safeFilename(input.filename),
-    mimeType: validation.mimeType,
-    byteSize: validation.byteSize,
-    sha256: validation.sha256,
-    storageProvider: store.id,
-    storageKey,
-    category: input.category,
-    extractionStatus: "pending",
-  });
+  // The check above cannot be atomic on its own: two identical uploads racing
+  // both pass it before either inserts. The unique index on (case_id, sha256)
+  // is what actually enforces one row per document, so the insert claims the
+  // row and a lost race is reported as the duplicate it is rather than
+  // producing a second copy of the same evidence.
+  const inserted = await db
+    .insert(schema.evidence)
+    .values({
+      id: evidenceId,
+      caseId: input.caseId,
+      ownerEmail: input.ownerEmail,
+      filename: safeFilename(input.filename),
+      mimeType: validation.mimeType,
+      byteSize: validation.byteSize,
+      sha256: validation.sha256,
+      storageProvider: store.id,
+      storageKey,
+      category: input.category,
+      extractionStatus: "pending",
+    })
+    .onConflictDoNothing({
+      target: [schema.evidence.caseId, schema.evidence.sha256],
+    })
+    .returning({ id: schema.evidence.id });
+
+  if (inserted.length === 0) {
+    // Another upload of the same bytes won the race. Remove the blob this call
+    // wrote (it is keyed by this call's own id, so no other row refers to it),
+    // then report the row that is already stored.
+    try {
+      await store.delete({ ownerEmail: input.ownerEmail, storageKey });
+    } catch {
+      // A leftover blob is a small leak, not a correctness problem; the row is
+      // what callers see. Never fail the request over cleanup.
+    }
+    const [existing] = await db
+      .select({ id: schema.evidence.id, filename: schema.evidence.filename })
+      .from(schema.evidence)
+      .where(
+        and(
+          eq(schema.evidence.caseId, input.caseId),
+          eq(schema.evidence.sha256, validation.sha256),
+        ),
+      )
+      .limit(1);
+    if (existing) {
+      return {
+        kind: "duplicate",
+        existingEvidenceId: existing.id,
+        existingFilename: existing.filename,
+      };
+    }
+    // The row vanished between the conflict and the read (a concurrent delete).
+    // Reporting a failure is correct: nothing was stored by this call.
+    return {
+      kind: "rejected",
+      code: "duplicate_race_lost",
+      message: "Another upload of this file completed first; nothing was stored.",
+    };
+  }
+
   await touchCase(input.caseId, input.ownerEmail);
 
   return {

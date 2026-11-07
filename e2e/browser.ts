@@ -15,7 +15,7 @@ import { chromium, type Browser } from "playwright-core";
  * Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to override the path.
  */
 const CANDIDATES = [
-  process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,
+  process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE, // guard:allow-env-credential — optional test browser path override, not a credential
   "/usr/bin/chromium",
   "/usr/bin/chromium-browser",
   "/usr/bin/google-chrome",

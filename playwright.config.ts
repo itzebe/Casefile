@@ -13,8 +13,8 @@ import { resolveBrowserExecutable } from "./e2e/browser.js";
  * The browser is the system Chromium via `playwright-core` (see
  * `e2e/browser.ts`), so no CDN download is required.
  */
-const PORT = Number(process.env.E2E_PORT ?? 12001);
-const BASE_URL = process.env.E2E_BASE_URL ?? `http://127.0.0.1:${PORT}`;
+const PORT = Number(process.env.E2E_PORT ?? 12001); // guard:allow-env-credential — local test server port, not a credential
+const BASE_URL = process.env.E2E_BASE_URL ?? `http://127.0.0.1:${PORT}`; // guard:allow-env-credential — local test server URL, not a credential
 
 export default defineConfig({
   testDir: "./e2e",
@@ -34,7 +34,7 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
-  webServer: process.env.E2E_NO_SERVER
+  webServer: process.env.E2E_NO_SERVER // guard:allow-env-credential — test switch to reuse a running dev server, not a credential
     ? undefined
     : {
         // `agent-native dev` without `--open`: the suite never needs a browser

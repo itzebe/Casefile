@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, index, integer, pgTable, text } from "drizzle-orm/pg-core";
+import { boolean, index, integer, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
 
 /**
  * CASEFILE domain schema.
@@ -84,7 +84,9 @@ export const evidence = pgTable(
   (table) => [
     index("casefile_evidence_case_idx").on(table.caseId),
     index("casefile_evidence_owner_idx").on(table.ownerEmail),
-    index("casefile_evidence_digest_idx").on(table.caseId, table.sha256),
+    // Unique, not a plain index: one document is one row per case. The upload
+    // path relies on this to make its duplicate check race-safe.
+    uniqueIndex("casefile_evidence_case_digest_uidx").on(table.caseId, table.sha256),
   ],
 );
 

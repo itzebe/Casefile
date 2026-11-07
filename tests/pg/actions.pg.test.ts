@@ -18,7 +18,7 @@ import { RECEIPT_TEXT, STATEMENT_CSV, csvBytes, textBytes } from "../fixtures/ev
  * database (see `vitest.pg.config.ts`), so it never fails for lack of a server.
  */
 
-const PG_URL = process.env.CASEFILE_TEST_PG_URL;
+const PG_URL = process.env.CASEFILE_TEST_PG_URL; // guard:allow-env-credential — scratch test database DSN, not a credential
 const OWNER = "owner@example.com";
 
 const describePg = PG_URL ? describe : describe.skip;
@@ -133,5 +133,54 @@ describePg("real PostgreSQL", () => {
       sql`SELECT count(*)::int AS n FROM casefile_cases WHERE id = ${caseResult.id} AND owner_email = ${"intruder@example.com"}`,
     )) as unknown as Array<{ n: number }>;
     expect(rows[0]!.n).toBe(0);
+  });
+
+  it("stores one row when the same file is uploaded concurrently", async () => {
+    // Regression: the upload path checked for a duplicate digest and then
+    // inserted, so identical uploads racing both passed the check and wrote a
+    // second row. The unique index on (case_id, sha256) plus a conflict-safe
+    // insert is what makes the check hold. Only a real server runs these truly
+    // concurrently; PGlite serialises them and would not catch the race.
+    const caseResult = await callAction<{ id: string }>(
+      "create-case",
+      { title: "PG concurrent digest", description: "race", category: "uncategorized" },
+      userContext(OWNER),
+    );
+    const payload = {
+      caseId: caseResult.id,
+      filename: "receipt.txt",
+      dataBase64: Buffer.from(textBytes(RECEIPT_TEXT)).toString("base64"),
+      category: "receipt" as const,
+    };
+
+    const settled = await Promise.allSettled([
+      callAction("upload-evidence", payload, userContext(OWNER)),
+      callAction("upload-evidence", payload, userContext(OWNER)),
+      callAction("upload-evidence", payload, userContext(OWNER)),
+      callAction("upload-evidence", payload, userContext(OWNER)),
+    ]);
+
+    // No call may fail: a lost race is reported as a duplicate, not an error.
+    for (const outcome of settled) {
+      expect(outcome.status).toBe("fulfilled");
+    }
+    const results = settled.map(
+      (outcome) =>
+        (outcome as PromiseFulfilledResult<{ duplicate: boolean; evidenceId?: string }>).value,
+    );
+    expect(results.filter((r) => r.duplicate === false)).toHaveLength(1);
+    expect(results.filter((r) => r.duplicate === true)).toHaveLength(3);
+
+    const db = getDb();
+    const evidenceRows = (await db.execute(
+      sql`SELECT count(*)::int AS n FROM casefile_evidence WHERE case_id = ${caseResult.id}`,
+    )) as unknown as Array<{ n: number }>;
+    expect(evidenceRows[0]!.n).toBe(1);
+
+    // A lost race must not leave its bytes behind either.
+    const blobRows = (await db.execute(
+      sql`SELECT count(*)::int AS n FROM casefile_evidence_blobs WHERE case_id = ${caseResult.id}`,
+    )) as unknown as Array<{ n: number }>;
+    expect(blobRows[0]!.n).toBe(1);
   });
 });

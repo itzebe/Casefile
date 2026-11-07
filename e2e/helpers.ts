@@ -3,7 +3,7 @@ import path from "node:path";
 
 /** HTTP helpers for driving the app's real action endpoints from a test. */
 export function apiBase(): string {
-  return process.env.E2E_BASE_URL ?? "http://127.0.0.1:12001";
+  return process.env.E2E_BASE_URL ?? "http://127.0.0.1:12001"; // guard:allow-env-credential — local test server URL, not a credential
 }
 
 export interface ActionResult {

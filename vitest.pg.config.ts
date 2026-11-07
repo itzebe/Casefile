@@ -15,7 +15,7 @@ import { defineConfig } from "vitest/config";
  * is skipped rather than failing, so `pnpm test:pg` is safe to run anywhere and
  * CI decides whether a server is present.
  */
-const pgUrl = process.env.CASEFILE_TEST_PG_URL;
+const pgUrl = process.env.CASEFILE_TEST_PG_URL; // guard:allow-env-credential — scratch test database DSN, not a credential
 
 export default defineConfig({
   resolve: {
