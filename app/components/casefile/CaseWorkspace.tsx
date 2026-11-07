@@ -15,7 +15,13 @@ import type {
 } from "@shared/casefile/types";
 import { DOCUMENT_TYPES, DOCUMENT_TYPE_LABELS, label } from "@shared/casefile/types";
 
-import { ProvenanceBadge, ReviewBadge, StatusPill } from "@/components/casefile/badges";
+import {
+  GapReviewBadge,
+  NoteStatusBadge,
+  ProvenanceBadge,
+  ReviewBadge,
+  StatusPill,
+} from "@/components/casefile/badges";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -807,7 +813,7 @@ function CrossDocumentPanel({
                   <div key={gap.gapKey} className="rounded-lg border border-dashed border-border p-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-sm font-medium">{gap.missing}</p>
-                      <ReviewBadge value={gap.reviewStatus} />
+                      <GapReviewBadge value={gap.reviewStatus} />
                     </div>
                     {gap.affectsStatement ? (
                       <p className="mt-1 text-xs text-muted-foreground">
@@ -1421,7 +1427,7 @@ export function NotesPanel({ caseId }: { caseId: string }) {
             <li key={note.id} className="rounded-md border border-border px-3 py-2">
               <p className="text-sm">{note.body}</p>
               <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <ReviewBadge value={note.status} />
+                <NoteStatusBadge value={note.status} />
                 <span>
                   {note.editedBy ? `edited by ${note.editedBy}` : "added"} ·{" "}
                   {new Date(note.updatedAt).toLocaleString()}

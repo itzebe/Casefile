@@ -43,6 +43,73 @@ const REVIEW_STYLES: Record<ReviewStatus, string> = {
   rejected: "border-rose-600/30 bg-rose-500/10 text-rose-800 line-through dark:text-rose-300",
 };
 
+const REVIEW_WORDS: Record<ReviewStatus, string> = {
+  proposed: "Proposed",
+  confirmed: "Confirmed",
+  rejected: "Rejected",
+};
+
+/**
+ * A human verdict on a derived evidence gap (see `GAP_REVIEW_STATUSES`). These
+ * are not finding review states, so they are rendered from their own words
+ * rather than folded into `ReviewBadge`: a gap marked "Not applicable" must
+ * never read as a rejected finding.
+ */
+const GAP_REVIEW_STYLES: Record<string, string> = {
+  open: "border-zinc-500/30 bg-zinc-500/10 text-zinc-700 dark:text-zinc-300",
+  resolved: "border-emerald-600/40 bg-emerald-600/15 text-emerald-900 dark:text-emerald-200",
+  unresolved: "border-amber-600/30 bg-amber-500/10 text-amber-800 dark:text-amber-300",
+  not_applicable: "border-zinc-500/30 bg-zinc-500/10 text-zinc-700 dark:text-zinc-300",
+};
+
+const GAP_REVIEW_WORDS: Record<string, string> = {
+  open: "Not reviewed",
+  resolved: "Resolved",
+  unresolved: "Unresolved",
+  not_applicable: "Not applicable",
+};
+
+export function GapReviewBadge({ value }: { value: string | null }) {
+  const key = value ?? "open";
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-xs font-medium",
+        GAP_REVIEW_STYLES[key] ?? GAP_REVIEW_STYLES.open,
+      )}
+      title="Reviewer's verdict on this gap"
+    >
+      {GAP_REVIEW_WORDS[key] ?? key.replace(/_/g, " ")}
+    </span>
+  );
+}
+
+/** A note's own state: open or resolved. Not a finding review state. */
+const NOTE_STYLES: Record<string, string> = {
+  open: "border-sky-600/30 bg-sky-500/10 text-sky-800 dark:text-sky-300",
+  resolved: "border-emerald-600/40 bg-emerald-600/15 text-emerald-900 dark:text-emerald-200",
+};
+
+const NOTE_WORDS: Record<string, string> = {
+  open: "Open",
+  resolved: "Resolved",
+};
+
+export function NoteStatusBadge({ value }: { value: string | null }) {
+  const key = value ?? "open";
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-xs font-medium",
+        NOTE_STYLES[key] ?? NOTE_STYLES.open,
+      )}
+      title="Note state"
+    >
+      {NOTE_WORDS[key] ?? key.replace(/_/g, " ")}
+    </span>
+  );
+}
+
 export function ReviewBadge({ value }: { value: ReviewStatus | string | null }) {
   const key = (value ?? "proposed") as ReviewStatus;
   return (
@@ -53,7 +120,7 @@ export function ReviewBadge({ value }: { value: ReviewStatus | string | null }) 
       )}
       title="Review state set by a person"
     >
-      {key === "proposed" ? "Proposed" : key === "confirmed" ? "Confirmed" : "Rejected"}
+      {REVIEW_WORDS[key] ?? value}
     </span>
   );
 }
