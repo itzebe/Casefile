@@ -212,6 +212,29 @@ rejected even if it looks better in isolation.
 - **Record the evidence.** When a run or verification completes, capture the
   concrete artifact — the response body, the run status, the screenshot — so
   the result is inspectable after the fact.
+- **Run the browser journeys against an empty database.** `load-demo-case` is
+  idempotent by title, so a journey that seeds the demo reuses the case an
+  earlier run already wrote to. A local pass can then depend on rows a previous
+  run left behind and hide a real failure that CI, starting from an empty
+  database, hits. Before trusting a green `pnpm test:e2e`, stop the dev server,
+  delete `data/pglite`, and run the journeys again from nothing — or give the
+  journey its own uniquely-titled case (`seedDemoCase(scenario, title)`). A
+  journey that asserts on *fresh* state (zero findings, no conflicts) must own
+  its case, or the assertion is testing the previous run.
+- **Write assertions the engine can actually satisfy.** Findings, and therefore
+  cross-document contradictions and gaps, exist only after a model proposes
+  claims. With no provider configured, the deterministic engine produces
+  relationships from shared identifiers, amounts, parties, and dates — not
+  contradictions. A journey that asserts a contradiction without first proposing
+  claims is asserting something the environment cannot produce; it will pass
+  only where stale claims happen to exist. Assert what the path under test
+  really does, and say in a comment why the model-dependent case is covered
+  elsewhere.
+- **Prefer scoped, exact locators.** Playwright's `getByRole(name)` and
+  `getByText` are substring matches by default, so a bare `"Cases"` also matches
+  a "No cases yet" heading and a filename also matches the upload notice that
+  quotes it. A strict-mode violation is a test defect, not a product defect:
+  scope to the section (`page.locator("#evidence")`) and pass `{ exact: true }`.
 - **No success without evidence.** If something is blocked, report it as
   blocked with the exact error and the attempted fix, rather than reporting
   success.

@@ -41,8 +41,14 @@ export async function callAction(
 }
 
 /** Loads the bundled synthetic demonstration case and returns its id. */
-export async function seedDemoCase(scenario: "payment" | "court"): Promise<string> {
-  const { status, json } = await callAction("load-demo-case", { scenario });
+export async function seedDemoCase(scenario: "payment" | "court", title?: string): Promise<string> {
+  const { status, json } = await callAction("load-demo-case", {
+    scenario,
+    // A caller that asserts on the case's *fresh* state passes a unique title,
+    // so it gets its own case rather than sharing one other tests have written
+    // to (the loader is idempotent by title).
+    ...(title ? { title } : {}),
+  });
   if (status >= 400) {
     throw new Error(`load-demo-case failed (${status}): ${JSON.stringify(json).slice(0, 300)}`);
   }
