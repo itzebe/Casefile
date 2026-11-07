@@ -8,6 +8,9 @@ every decision to the person investigating.
 Built for the **Builder.io Agent-Native Hackathon 2026** on
 [Agent-Native](https://www.agent-native.com/docs/).
 
+Submission and demo material for the hackathon is in
+[`docs/SUBMISSION.md`](./docs/SUBMISSION.md).
+
 ## What it does
 
 - **Ingest real documents.** PDF, Word, Excel, PNG/JPEG, plain text, Markdown,

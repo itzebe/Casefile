@@ -202,6 +202,16 @@ rejected even if it looks better in isolation.
   sized for the answer alone is consumed entirely and the run ends with reason
   `max_tokens` and no text. If a reasoning model returns nothing, raise the cap
   (`analyze-evidence` uses 16384); do not go looking in the prompt.
+- **The Groq free tier caps tokens per day (TPD), not just per minute.** The
+  `openai/gpt-oss-120b` free tier allows 200,000 tokens/day. Exhausting it makes
+  **every** agent turn fail with `Rate limit reached ... tokens per day (TPD)`,
+  including a one-line "list my cases" — the chat shows the raw 429 text. This
+  is a quota state, not a code defect: the same requests succeed once the quota
+  resets (observed both ways on 2026-11-07). Before a demo or a judging pass,
+  confirm the quota is fresh. A heavier verification run can exhaust the day's
+  budget by itself, so do not burn the quota on repeated full-story probes.
+  Durable fixes (a paid tier or a fallback provider) cost money and are out of
+  scope under the "no paid services" constraint.
 - **Do not deploy** without an explicit instruction to deploy.
 
 ## 6. Testing and verification
