@@ -219,4 +219,43 @@ export const MIGRATIONS: MigrationEntry[] = [
           ON casefile_evidence (case_id, sha256);
       `,
     },
+    {
+      version: 5,
+      name: "casefile-investigation-notes-and-gap-reviews",
+      sql: `
+        CREATE TABLE IF NOT EXISTS casefile_investigation_notes (
+          id TEXT PRIMARY KEY,
+          case_id TEXT NOT NULL,
+          owner_email TEXT NOT NULL,
+          finding_id TEXT,
+          body TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'open',
+          edited_by TEXT,
+          edited_at TIMESTAMPTZ,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS casefile_notes_case_idx
+          ON casefile_investigation_notes (case_id, updated_at);
+        CREATE INDEX IF NOT EXISTS casefile_notes_owner_idx
+          ON casefile_investigation_notes (owner_email);
+
+        CREATE TABLE IF NOT EXISTS casefile_gap_reviews (
+          id TEXT PRIMARY KEY,
+          case_id TEXT NOT NULL,
+          owner_email TEXT NOT NULL,
+          gap_key TEXT NOT NULL,
+          gap_kind TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'open',
+          note TEXT,
+          reviewed_by TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS casefile_gap_reviews_case_key_uidx
+          ON casefile_gap_reviews (case_id, gap_key);
+        CREATE INDEX IF NOT EXISTS casefile_gap_reviews_owner_idx
+          ON casefile_gap_reviews (owner_email);
+      `,
+    },
   ];

@@ -10,6 +10,7 @@ import type {
   CaseStatus,
   EvidenceCategory,
   DocumentType,
+  GapReviewStatus,
   Provenance,
 } from "@shared/casefile/types";
 import { DOCUMENT_TYPES, DOCUMENT_TYPE_LABELS, label } from "@shared/casefile/types";
@@ -122,12 +123,17 @@ interface Relationship {
 interface Gap {
   id: string;
   kind: string;
+  gapKey: string;
   missing: string;
   affectsFindingId: string | null;
   affectsStatement: string | null;
   whyItMatters: string;
   whatWouldHelp: string;
   relatedEvidenceIds: string[];
+  reviewStatus: string;
+  reviewNote: string | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
 }
 
 interface GraphResult {
@@ -673,6 +679,7 @@ function CrossDocumentPanel({
   onBuild,
   building,
   onReviewRelationship,
+  onReviewGap,
   onSelectEvidence,
 }: {
   graph: GraphResult | null;
@@ -680,6 +687,7 @@ function CrossDocumentPanel({
   onBuild: () => void;
   building: boolean;
   onReviewRelationship: (relationshipId: string, reviewStatus: "confirmed" | "rejected") => void;
+  onReviewGap: (gapKey: string, status: GapReviewStatus) => void;
   onSelectEvidence: (evidenceId: string, passageId: string | null) => void;
 }) {
   const counts = graph?.counts;
@@ -796,8 +804,11 @@ function CrossDocumentPanel({
               <h3 className="mb-2 text-sm font-medium">What the record does not yet establish</h3>
               <div className="space-y-2">
                 {gaps.map((gap) => (
-                  <div key={gap.id} className="rounded-lg border border-dashed border-border p-3">
-                    <p className="text-sm font-medium">{gap.missing}</p>
+                  <div key={gap.gapKey} className="rounded-lg border border-dashed border-border p-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium">{gap.missing}</p>
+                      <ReviewBadge value={gap.reviewStatus} />
+                    </div>
                     {gap.affectsStatement ? (
                       <p className="mt-1 text-xs text-muted-foreground">
                         Affects: {gap.affectsStatement}
@@ -808,15 +819,52 @@ function CrossDocumentPanel({
                       <span className="font-medium">Would help: </span>
                       {gap.whatWouldHelp}
                     </p>
-                    {gap.relatedEvidenceIds.length > 0 ? (
-                      <button
-                        type="button"
-                        className="mt-1 py-1 text-xs underline"
-                        onClick={() => onSelectEvidence(gap.relatedEvidenceIds[0]!, null)}
-                      >
-                        Go to the related document
-                      </button>
+                    {gap.reviewNote ? (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        <span className="font-medium">Reviewed: </span>
+                        {gap.reviewNote}
+                      </p>
                     ) : null}
+                    <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
+                      {gap.relatedEvidenceIds.length > 0 ? (
+                        <button
+                          type="button"
+                          className="py-1 underline"
+                          onClick={() => onSelectEvidence(gap.relatedEvidenceIds[0]!, null)}
+                        >
+                          Go to the related document
+                        </button>
+                      ) : null}
+                      <span className="flex items-center gap-3">
+                        {gap.reviewStatus !== "resolved" ? (
+                          <button
+                            type="button"
+                            className="py-1 underline"
+                            onClick={() => onReviewGap(gap.gapKey, "resolved")}
+                          >
+                            Resolved
+                          </button>
+                        ) : null}
+                        {gap.reviewStatus !== "unresolved" ? (
+                          <button
+                            type="button"
+                            className="py-1 underline"
+                            onClick={() => onReviewGap(gap.gapKey, "unresolved")}
+                          >
+                            Unresolved
+                          </button>
+                        ) : null}
+                        {gap.reviewStatus !== "not_applicable" ? (
+                          <button
+                            type="button"
+                            className="py-1 underline"
+                            onClick={() => onReviewGap(gap.gapKey, "not_applicable")}
+                          >
+                            Not applicable
+                          </button>
+                        ) : null}
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1306,6 +1354,88 @@ interface ActivityEntry {
 }
 
 /**
+ * The investigator's own notes.
+ *
+ * A note is the human's record: it is attributed, editable, and never rewritten
+ * by analysis. This panel is deliberately separate from the finding list so a
+ * person's working notes are never confused with the case's evidence.
+ */
+export function NotesPanel({ caseId }: { caseId: string }) {
+  const notes = useActionQuery<{
+    notes: Array<{
+      id: string;
+      findingId: string | null;
+      body: string;
+      status: string;
+      editedBy: string | null;
+      editedAt: string | null;
+      updatedAt: string;
+    }>;
+    count: number;
+  }>("list-notes", { caseId });
+  const [draft, setDraft] = useState("");
+  const save = useActionMutation("update-note", {
+    onSuccess: () => {
+      setDraft("");
+      void notes.refetch();
+    },
+  });
+
+  return (
+    <section className="mb-6 scroll-mt-4" data-testid="notes-panel" id="notes" tabIndex={-1}>
+      <h2 className="text-lg font-medium">Investigator notes</h2>
+      <p className="text-sm text-muted-foreground">
+        Your own working notes on this case. They are attributed to you and are never overwritten
+        by analysis.
+      </p>
+
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+        <Input
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder="Add a note about this case…"
+          aria-label="New investigator note"
+        />
+        <Button
+          onClick={() => {
+            if (!draft.trim()) return;
+            save.mutate({ caseId, body: draft.trim() });
+          }}
+          disabled={save.isPending || draft.trim().length === 0}
+        >
+          {save.isPending ? "Saving…" : "Add note"}
+        </Button>
+      </div>
+
+      {notes.isLoading ? (
+        <p className="mt-3 text-sm text-muted-foreground">Reading the notes…</p>
+      ) : notes.error ? (
+        <p className="mt-3 text-sm text-destructive">
+          {notes.error instanceof Error ? notes.error.message : String(notes.error)}
+        </p>
+      ) : (notes.data?.notes.length ?? 0) === 0 ? (
+        <p className="mt-3 text-sm text-muted-foreground">No notes on this case yet.</p>
+      ) : (
+        <ul className="mt-3 space-y-2">
+          {notes.data!.notes.map((note) => (
+            <li key={note.id} className="rounded-md border border-border px-3 py-2">
+              <p className="text-sm">{note.body}</p>
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <ReviewBadge value={note.status} />
+                <span>
+                  {note.editedBy ? `edited by ${note.editedBy}` : "added"} ·{" "}
+                  {new Date(note.updatedAt).toLocaleString()}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/**
  * The case's activity history: every write that touched it, newest first, and
  * whether it came from a person or the agent. The audit trail was recorded all
  * along; this is where it becomes visible.
@@ -1439,6 +1569,14 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
     onError: (err: Error) => setError(err.message),
   });
 
+  const reviewGap = useActionMutation("review-gap", {
+    onSuccess: () => {
+      // The verdict is stored, so re-read the graph to show it.
+      void storedGraph.refetch();
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
   const upload = useActionMutation("upload-evidence", {
     onSuccess: (result: { duplicate?: boolean; message?: string; filename?: string }) => {
       if (result?.duplicate) {
@@ -1458,6 +1596,18 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
       if (unsupported) parts.push(`${unsupported} could not be read`);
       if (failed) parts.push(`${failed} failed`);
       setNotice(parts.join(", ") + ".");
+      invalidate();
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  const retryExtraction = useActionMutation("retry-extraction", {
+    onSuccess: (result: { retried: number; note?: string }) => {
+      setNotice(
+        result.retried === 0
+          ? result.note ?? "No failed or pending files to retry."
+          : `Retried ${result.retried} file(s).`,
+      );
       invalidate();
     },
     onError: (err: Error) => setError(err.message),
@@ -1764,6 +1914,13 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
             {extract.isPending ? "Reading…" : "Read the documents"}
           </Button>
           <Button
+            variant="ghost"
+            onClick={() => retryExtraction.mutate({ caseId })}
+            disabled={retryExtraction.isPending || data.evidence.length === 0}
+          >
+            {retryExtraction.isPending ? "Retrying…" : "Retry failed files"}
+          </Button>
+          <Button
             onClick={() => {
               setNotice(null);
               setError(null);
@@ -1790,6 +1947,7 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
         onReviewRelationship={(relationshipId, reviewStatus) =>
           reviewRelationship.mutate({ caseId, relationshipId, reviewStatus })
         }
+        onReviewGap={(gapKey, status) => reviewGap.mutate({ caseId, gapKey, status })}
         onSelectEvidence={(evidenceId, passageId) => {
           setSelectedEvidenceId(evidenceId);
           setSelectedPassageId(passageId);
@@ -2004,6 +2162,8 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
       </section>
 
       <ActivityPanel caseId={caseId} />
+
+      <NotesPanel caseId={caseId} />
 
       <Label className="mt-8 block text-xs text-muted-foreground">
         Case id: {data.case.id}

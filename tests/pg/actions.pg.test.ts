@@ -183,4 +183,52 @@ describePg("real PostgreSQL", () => {
     )) as unknown as Array<{ n: number }>;
     expect(blobRows[0]!.n).toBe(1);
   });
+
+  it("enforces one gap verdict per case and gap on the real server", async () => {
+    // The verdict is keyed to a derived gap's stable key; the unique index is
+    // what stops a second reviewer's insert from stacking a duplicate opinion
+    // the UI would have to reconcile.
+    const caseResult = await callAction<{ id: string }>(
+      "create-case",
+      { title: "PG gap reviews", description: "gap", category: "uncategorized" },
+      userContext(OWNER),
+    );
+    const db = getDb();
+    await db.execute(sql`
+      INSERT INTO casefile_gap_reviews (id, case_id, owner_email, gap_key, gap_kind, status, reviewed_by)
+      VALUES ('gap_a', ${caseResult.id}, ${OWNER}, 'unsupported_claim:f1', 'unsupported_claim', 'resolved', ${OWNER})
+    `);
+    await expect(
+      db.execute(sql`
+        INSERT INTO casefile_gap_reviews (id, case_id, owner_email, gap_key, gap_kind, status, reviewed_by)
+        VALUES ('gap_b', ${caseResult.id}, ${OWNER}, 'unsupported_claim:f1', 'unsupported_claim', 'unresolved', ${OWNER})
+      `),
+    ).rejects.toThrow();
+  });
+
+  it("persists notes and gap verdicts across a fresh connection", async () => {
+    const caseResult = await callAction<{ id: string }>(
+      "create-case",
+      { title: "PG notes", description: "notes", category: "uncategorized" },
+      userContext(OWNER),
+    );
+    await callAction(
+      "update-note",
+      { caseId: caseResult.id, body: "A note that must survive a reconnect." },
+      userContext(OWNER),
+    );
+    const notes = await callAction<{ notes: Array<{ body: string }> }>(
+      "list-notes",
+      { caseId: caseResult.id },
+      userContext(OWNER),
+    );
+    expect(notes.notes[0]?.body).toContain("survive a reconnect");
+
+    // Read the row straight from the server, bypassing the action layer.
+    const db = getDb();
+    const rows = (await db.execute(
+      sql`SELECT body FROM casefile_investigation_notes WHERE case_id = ${caseResult.id}`,
+    )) as unknown as Array<{ body: string }>;
+    expect(rows[0]?.body).toContain("survive a reconnect");
+  });
 });

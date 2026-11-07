@@ -350,6 +350,48 @@ test.describe("Journey G — entities and activity", () => {
   });
 });
 
+test.describe("Journey H — investigation completeness", () => {
+  test("a note written in the UI persists, and search finds it across cases", async ({ page }) => {
+    const caseId = await seedDemoCase("payment");
+    await gotoCase(page, caseId);
+
+    // A note is the investigator's own record; it is written in the UI and must
+    // survive a reload rather than living only in component state.
+    const noteBody = `Investigator note ${Date.now()}`;
+    const notesPanel = page.getByTestId("notes-panel");
+    await expect(notesPanel).toBeVisible({ timeout: 30_000 });
+    await notesPanel.getByLabel("New investigator note").fill(noteBody);
+    await notesPanel.getByRole("button", { name: "Add note" }).click();
+    await expect(notesPanel.getByText(noteBody)).toBeVisible({ timeout: 30_000 });
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("notes-panel").getByText(noteBody)).toBeVisible({
+      timeout: 45_000,
+    });
+
+    // The note is findable from the cases index, which is the point of storing
+    // it: a working note that cannot be found again is not a record.
+    await page.goto("/cases", { waitUntil: "domcontentloaded" });
+    await page.getByTestId("case-search-input").fill(noteBody);
+    const results = page.getByTestId("search-results");
+    await expect(results).toBeVisible({ timeout: 30_000 });
+    // The note comes back as a result link. The summary line also echoes the
+    // term, so match the result itself, not just the text.
+    await expect(
+      results.getByRole("link", { name: new RegExp(`Note: ${noteBody}`) }),
+    ).toBeVisible({ timeout: 30_000 });
+  });
+
+  test("retry-extraction is safe to call when nothing has failed", async () => {
+    const caseId = await seedDemoCase("payment");
+    const { status, json } = await callAction("retry-extraction", { caseId });
+    expect(status).toBeLessThan(400);
+    // The demo's documents are all readable, so there is nothing to retry; the
+    // call must say so rather than failing or re-reading everything.
+    expect((json as { retried: number }).retried).toBe(0);
+  });
+});
+
 test.describe("Responsive and accessibility", () => {
   for (const [name, width, height] of [
     ["desktop", 1440, 900],

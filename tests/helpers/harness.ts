@@ -38,6 +38,9 @@ export async function resetCasefileTables(): Promise<void> {
     "DELETE FROM casefile_evidence_passages",
     "DELETE FROM casefile_evidence_blobs",
     "DELETE FROM casefile_evidence",
+    "DELETE FROM casefile_relationships",
+    "DELETE FROM casefile_gap_reviews",
+    "DELETE FROM casefile_investigation_notes",
     "DELETE FROM casefile_audit_log",
     "DELETE FROM casefile_cases",
   ]) {
