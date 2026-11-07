@@ -33,13 +33,13 @@ const hello = await page.evaluate(async (base) => {
     credentials: "include",
   });
   return { status: res.status, body: await res.text() };
-});
+}, BASE);
 console.log("hello action:", hello.status, hello.body);
 
 const engine = await page.evaluate(async (base) => {
   const res = await fetch(`${base}/_agent-native/agent-engine/status`, { credentials: "include" });
   return { status: res.status, body: (await res.text()).slice(0, 300) };
-});
+}, BASE);
 console.log("agent engine:", engine.status, engine.body);
 
 const caps = await page.evaluate(async (base) => {
@@ -47,7 +47,7 @@ const caps = await page.evaluate(async (base) => {
     credentials: "include",
   });
   return { status: res.status, body: (await res.text()).slice(0, 200) };
-});
+}, BASE);
 console.log("chat capabilities:", caps.status, caps.body);
 
 await browser.close();

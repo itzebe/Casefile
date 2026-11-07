@@ -194,7 +194,7 @@ rejected even if it looks better in isolation.
 - **Deployment-level provider defaults.** Every signup gets its own
   organization, so a per-org app model default does not reach a judge in a
   fresh org. Set the deployment default with `AGENT_ENGINE` + `AGENT_MODEL`
-  (`ai-sdk:groq` / `openai/gpt-oss-120b`); the framework's hard-coded
+  (`ai-sdk:groq` / `openai/gpt-oss-20b`); the framework's hard-coded
   `DEFAULT_MODEL` is retired at Groq and fails with "model does not exist".
   That default is a **reasoning model**: it spends output tokens on hidden
   reasoning before it writes an answer, so the investigation output cap must be
@@ -202,6 +202,31 @@ rejected even if it looks better in isolation.
   sized for the answer alone is consumed entirely and the run ends with reason
   `max_tokens` and no text. If a reasoning model returns nothing, raise the cap
   (`analyze-evidence` uses 16384); do not go looking in the prompt.
+- **The Groq free tier caps tokens per day and per minute, and the pools are
+  per-model.** `openai/gpt-oss-120b` allows 200,000 tokens/day; exhausting it
+  makes **every** agent turn fail with `Rate limit reached ... tokens per day
+  (TPD)`, including a one-line "list my cases", and the chat shows the raw 429
+  text. The free tier's smaller sibling `openai/gpt-oss-20b` has its **own**
+  pool, so switching `AGENT_MODEL` to it recovers the agent at no cost — this is
+  the deployed value. `openai/gpt-oss-20b` is capped at 8,000 tokens/**minute**,
+  so one short turn fits and several turns in the same minute do not; ask the
+  agent one thing at a time. Not every model id is accessible: on 2026-11-07 only
+  these two `gpt-oss` ids worked, and the rest of the ids the app lists returned
+  "does not exist or you do not have access" (`llama3-8b-8192`, `gemma2-9b-it`,
+  `deepseek-r1-distill-llama-70b` are decommissioned). The app's model list is a
+  static catalog, not an entitlement check — probe before trusting an id.
+- **The framework has a rate-limit fallback, but only between Claude families.**
+  `resolveFallbackModel` maps `claudeModelFamily(model)` through
+  `RATE_LIMIT_FALLBACK_FAMILY`, so a Groq model gets no automatic fallback and a
+  throttled Groq turn just fails. Pin a model with headroom instead.
+- **A raw provider error reaches the user unsanitised when it is not
+  classified.** `classifyTerminalErrorCode` (`agent/engine/error-detail.js`)
+  matches only "too many requests" or a literal `429`; Groq's "Rate limit
+  reached" misses both, so no `http_429` code is persisted and the client's
+  friendly rate-limit message never fires. The chat surface is framework-owned
+  with no app-level error formatter, and the plugin's `engine` option is not
+  reliably merged into the engine the chat uses, so an app-side `requestFetch`
+  wrapper is not a safe seam. Documented rather than worked around.
 - **Do not deploy** without an explicit instruction to deploy.
 
 ## 6. Testing and verification
