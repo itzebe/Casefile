@@ -1,38 +1,59 @@
-# Visual Design Contract
+# CASEFILE — Visual Design Contract
 
-Chat is a quiet, full-canvas conversation workbench. AgentKit owns the
-conversation primitives; the template owns the surrounding navigation and
-workspace chrome.
+CASEFILE is a working document bench, not a chat toy. AgentKit owns the
+conversation primitives; the product owns the case workspace around them.
 
 ## Product mode
 
 - Mode: `operate`
-- Audience and cadence: frequent users managing many ongoing agent threads.
-- Primary workflow: begin, resume, pin, and organize conversations without
-  leaving the chat canvas.
+- Audience and cadence: a person working one dispute at a time, returning over
+  days to read, annotate, and confirm.
+- Primary workflow: add evidence, read what it establishes, review what
+  conflicts, see what is still unknown, and confirm — or refuse to confirm —
+  each proposed fact.
 
 ## Visual direction
 
-- Direction name: Quiet conversation library
-- Palette family: neutral ink and semantic surfaces; active rows use the
-  existing sidebar accent rather than a separate branded color.
-- Type treatment: dense sans-serif labels with regular-weight conversation
-  titles and restrained section labels.
-- Composition: a persistent conversation library beside a generous chat
-  canvas. New chat is the primary rail action, followed by Pinned and Recents.
-  Account, workspace, settings, and sign-out controls disclose from one footer
-  row instead of competing in the rail.
-- Shape language: borderless lists, soft selected rows, quiet corners, and
-  compact icon controls.
-- Anti-references: icon-only navigation as the default state, floating chips,
-  duplicated settings links, timestamps competing with thread titles, and
-  placeholder destinations that the app does not implement.
+- Direction name: **Quiet evidence ledger.**
+- Palette family: neutral ink on plain surfaces; one semantic accent for state.
+  Status colour is reserved for meaning (confirmed, contradictory, unread),
+  never decoration.
+- Type treatment: dense sans-serif labels; document text is the largest thing
+  on the page because it is what the reader came for.
+- Composition: the document is the centre. Controls sit in a persistent left
+  rail; the graph, findings, gaps, notes, and activity stack beside or below it.
+- Shape language: bordered cards, dashed borders for what is *not yet*
+  established, quiet corners, restrained controls.
 
-## Guardrails
+## The design constitution
 
-- Preserve the scaffold's semantic tokens and shared component seams.
-- Keep domain pages distinct from full-page chat and use the AgentSidebar for
-  contextual AI.
-- Compare sibling apps before reusing their palette or composition.
-- Keep pinning, rename, archive, and routing wired to the shared chat thread
-  model; the sidebar is a presentation layer, not a second history store.
+These rules are not style preferences; they are what the product is.
+
+1. **The document is the source of truth.** Every statement the app makes
+   resolves to the passage it came from, and the passage is one click away.
+2. **Proposed and confirmed look different.** A proposal is never rendered with
+   the visual weight of a confirmed fact.
+3. **Unknown is a first-class state.** A gap has its own look — dashed, quiet,
+   with what would help — and is never filled with a plausible guess.
+4. **The agent proposes; the person decides.** No control lets the agent
+   confirm on a person's behalf, and no wording implies it did.
+5. **Honest failure beats silent emptiness.** An unreadable file, an unavailable
+   OCR engine, and a refused action each say so, in place.
+6. **No placeholder destinations.** If a control is shown, it works. A screen
+   the app does not implement is not linked.
+
+## Anti-references
+
+- A chat bubble where a document should be.
+- A confidence percentage standing in for a citation.
+- A green "verified" badge on anything the user did not verify.
+- Marketing hero copy on a working surface.
+- A dead control, or a link to a screen that does not exist.
+
+## Evidence of the contract
+
+- `tests/ui-contract.test.ts` asserts the workspace renders the states above.
+- `tests/security-authz.test.ts` asserts that a case the caller does not own is
+  refused at the action boundary, and that no action reaches another owner's row.
+- The e2e journeys assert that a confirmed link persists and is audited without
+  altering the source document (`e2e/journeys.e2e.ts`, Journey C).
