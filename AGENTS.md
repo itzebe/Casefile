@@ -196,6 +196,12 @@ rejected even if it looks better in isolation.
   fresh org. Set the deployment default with `AGENT_ENGINE` + `AGENT_MODEL`
   (`ai-sdk:groq` / `openai/gpt-oss-120b`); the framework's hard-coded
   `DEFAULT_MODEL` is retired at Groq and fails with "model does not exist".
+  That default is a **reasoning model**: it spends output tokens on hidden
+  reasoning before it writes an answer, so the investigation output cap must be
+  large enough to clear the reasoning and still leave room for the JSON. A cap
+  sized for the answer alone is consumed entirely and the run ends with reason
+  `max_tokens` and no text. If a reasoning model returns nothing, raise the cap
+  (`analyze-evidence` uses 16384); do not go looking in the prompt.
 - **Do not deploy** without an explicit instruction to deploy.
 
 ## 6. Testing and verification
