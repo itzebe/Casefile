@@ -360,13 +360,15 @@ export async function analyzeCaseEvidence(
     : await runModel({
         systemPrompt: SYSTEM_PROMPT,
         userPrompt,
-        // The cap has to fit inside the time budget, or the run is cut off
-        // mid-JSON. On CPU this workspace generates roughly 9-14 tokens/second,
-        // so a 4096-token cap needs up to ~7 minutes while the budget allows
-        // 290s - the model was being stopped partway through the object. The
-        // prompt asks for at most 12 claims, 12 events, and 8 parties, which is
-        // well under 3000 tokens, so this cap is never the binding constraint.
-        maxOutputTokens: 3000,
+        // The output cap must clear a reasoning model's hidden reasoning tokens,
+        // not just the answer. A reasoning model (the deployment default,
+        // `openai/gpt-oss-120b`, is one) spends output budget on reasoning
+        // before it writes anything, so a cap sized for the answer alone is
+        // consumed entirely and the run stops with reason "max_tokens" and no
+        // text at all. The prompt asks for at most 12 claims, 12 events, and 8
+        // parties, so the answer is small and this cap is never the binding
+        // constraint on a model that is not reasoning-budget-starved.
+        maxOutputTokens: 16384,
         signal: options?.signal,
       });
 

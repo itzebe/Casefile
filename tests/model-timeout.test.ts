@@ -59,9 +59,34 @@ describe("finalizing a model reply", () => {
         text: "   ",
         timedOut: false,
         budgetMs: 290_000,
-        stopReason: "max_tokens",
       }),
-    ).toThrow(/returned no output[\s\S]*max_tokens/);
+    ).toThrow(/returned no output/);
+  });
+
+  it("reports an output budget consumed before any answer as a cap to raise", async () => {
+    // Observed in production on a reasoning model (openai/gpt-oss-120b): the
+    // engine stops with reason "max_tokens" and no text, because reasoning
+    // tokens used the whole cap. That is a cap that is too small, not a broken
+    // model, so the message must name the cap and the fix instead of sending an
+    // operator to inspect the prompt.
+    const finalizeModelOutput = await finalize();
+    let message = "";
+    try {
+      finalizeModelOutput({
+        model: "openai/gpt-oss-120b",
+        text: "",
+        timedOut: false,
+        budgetMs: 290_000,
+        maxOutputTokens: 3000,
+        stopReason: "max_tokens",
+      });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toContain("openai/gpt-oss-120b");
+    expect(message).toContain("3000-token");
+    expect(message).toMatch(/raise the output-token cap/i);
+    expect(message).not.toMatch(/ran out of its/);
   });
 
   it("returns the text when the model finished in time", async () => {

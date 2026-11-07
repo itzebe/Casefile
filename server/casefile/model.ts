@@ -134,6 +134,7 @@ export async function runModel(options: RunModelOptions): Promise<string> {
   const onAbort = () => controller.abort(options.signal?.reason);
   options.signal?.addEventListener("abort", onAbort, { once: true });
 
+  const maxOutputTokens = options.maxOutputTokens ?? 8192;
   let text = "";
   let stopReason: string | undefined;
   let stopError: string | undefined;
@@ -144,7 +145,7 @@ export async function runModel(options: RunModelOptions): Promise<string> {
       messages: [{ role: "user", content: [{ type: "text", text: options.userPrompt }] }],
       tools: [],
       abortSignal: controller.signal,
-      maxOutputTokens: options.maxOutputTokens ?? 4096,
+      maxOutputTokens,
       temperature: 0,
     });
     for await (const event of stream) {
@@ -175,6 +176,7 @@ export async function runModel(options: RunModelOptions): Promise<string> {
     text,
     timedOut,
     budgetMs,
+    maxOutputTokens,
     stopReason,
     stopError,
   });
@@ -208,6 +210,7 @@ export function finalizeModelOutput(input: {
   text: string;
   timedOut: boolean;
   budgetMs: number;
+  maxOutputTokens?: number | undefined;
   stopReason?: string | undefined;
   stopError?: string | undefined;
 }): string {
@@ -218,6 +221,20 @@ export function finalizeModelOutput(input: {
   }
   const trimmed = input.text.trim();
   if (!trimmed) {
+    // A reasoning model spends its output budget on hidden reasoning before it
+    // writes an answer, so a cap that is too small is consumed entirely and the
+    // engine stops with reason "max_tokens" and no text. That is a budget that
+    // is too small, not a model that failed, so it is reported as the former -
+    // otherwise the operator is sent to inspect the prompt, which is not the
+    // fault, while the one fixable number (the cap) is left unnamed.
+    if (input.stopReason === "max_tokens") {
+      const cap = input.maxOutputTokens
+        ? `its entire ${input.maxOutputTokens}-token output budget`
+        : "its entire output budget";
+      throw new ModelUnavailableError(
+        `The investigation model ("${input.model}") spent ${cap} on reasoning and returned no answer, so nothing was recorded. Raise the output-token cap for this model.`,
+      );
+    }
     // The model name and stop reason are the two facts an operator needs to fix
     // this, so they go in the message rather than only into a log line.
     const detail = input.stopError
