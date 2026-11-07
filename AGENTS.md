@@ -88,7 +88,11 @@ rejected even if it looks better in isolation.
 8. **No placeholder destinations.** Do not ship a link or control the app does
    not implement.
 9. **Accessibility is not a pass.** Every interactive control is keyboard
-   reachable and named; color is never the only signal.
+   reachable and named; color is never the only signal. A control a person
+   aims at is at least 24x24 CSS pixels (WCAG 2.5.8) — a block or list
+   control needs `py-1` on its base height. Inline links inside a sentence are
+   exempt. `tests/ui-contract.test.ts` enforces this; keep the exemption list
+   explicit rather than widening the rule.
 10. **The case file outlives the session.** Anything a user would expect to
     find later is persisted, not held in component state.
 
@@ -101,7 +105,14 @@ rejected even if it looks better in isolation.
   only. Read `.agents/skills/secrets/SKILL.md` before handling any credential.
 - **Auth is on by default.** `AUTH_DISABLED=true` is for local dev and preview
   only and must never be set in a production deploy. Standalone production
-  needs a stable `BETTER_AUTH_SECRET`.
+  needs a stable `BETTER_AUTH_SECRET`. This is enforced, not just documented:
+  the auth plugin's boot guard (`server/casefile/auth-guard.ts`,
+  `assertAuthNotDisabledInDeployment`) **refuses to start** when `AUTH_DISABLED`
+  is set and the process looks like a deployment (any hosted-platform marker, or
+  `NODE_ENV=production`), because every request would otherwise resolve to one
+  shared identity. The only escape hatch is an explicit
+  `CASEFILE_ALLOW_AUTH_DISABLED=true`, for a private demo. `tests/auth-guard.test.ts`
+  pins both the refusal and the opt-in.
 - **Least privilege for integrations.** Reuse the workspace's scoped connection
   resolver. Never hardcode a webhook URL, provider endpoint, or credential.
 - **Evidence may be sensitive.** Treat stored evidence as private to the case
@@ -164,7 +175,12 @@ rejected even if it looks better in isolation.
   mid-flight while the server keeps working, and the user sees nothing.
 - **One concept, one serialiser.** `get-case` and `list-evidence` both feed the
   workspace's evidence panel. Any field the panel renders (`passageCount`,
-  `citedByFindings`) must be present on both, or the panel silently blanks.
+  `citedByFindings`, `documentType`, `classificationConfidence`,
+  `classificationCorrectedBy`) must be present on both, or the panel silently
+  blanks. A `<select>` bound to a field the action omits does not error: it
+  falls back to its first option, so a missing `documentType` made every file
+  read "Court judgment" while the stored type was correct. When you add a
+  column to the panel, add it to both actions and assert they agree.
 - **The deploy config owns schema, not the request.** A hosted request runtime
   never creates tables (`schemaIsReleaseOwned()` gates DDL), so every release
   migration must run at build time on the production branch. `netlify.toml`
@@ -195,14 +211,56 @@ rejected even if it looks better in isolation.
 - **Test the failure mode.** For each new invariant, confirm it can fail —
   mutate the guard and watch the test go red. A check that cannot fail is a
   defect.
-- **Run the checks that exist.** `pnpm typecheck`, `pnpm test`
-  (vitest), and `pnpm agent-native:doctor`. Fix findings before declaring done.
+- **Run the checks that exist.** `pnpm typecheck`, `pnpm test` (vitest,
+  PGlite), `pnpm test:pg` (a real PostgreSQL server), `pnpm test:e2e`
+  (Playwright, real browser), `pnpm build`, and `pnpm agent-native:doctor`.
+  Fix findings before declaring done. Each layer proves something the others
+  cannot, so a green unit run is not a green project.
 - **Record the evidence.** When a run or verification completes, capture the
   concrete artifact — the response body, the run status, the screenshot — so
   the result is inspectable after the fact.
+- **Run the browser journeys against an empty database.** `load-demo-case` is
+  idempotent by title, so a journey that seeds the demo reuses the case an
+  earlier run already wrote to. A local pass can then depend on rows a previous
+  run left behind and hide a real failure that CI, starting from an empty
+  database, hits. Before trusting a green `pnpm test:e2e`, stop the dev server,
+  delete `data/pglite`, and run the journeys again from nothing — or give the
+  journey its own uniquely-titled case (`seedDemoCase(scenario, title)`). A
+  journey that asserts on *fresh* state (zero findings, no conflicts) must own
+  its case, or the assertion is testing the previous run.
+- **Write assertions the engine can actually satisfy.** Findings, and therefore
+  cross-document contradictions and gaps, exist only after a model proposes
+  claims. With no provider configured, the deterministic engine produces
+  relationships from shared identifiers, amounts, parties, and dates — not
+  contradictions. A journey that asserts a contradiction without first proposing
+  claims is asserting something the environment cannot produce; it will pass
+  only where stale claims happen to exist. Assert what the path under test
+  really does, and say in a comment why the model-dependent case is covered
+  elsewhere.
+- **Prefer scoped, exact locators.** Playwright's `getByRole(name)` and
+  `getByText` are substring matches by default, so a bare `"Cases"` also matches
+  a "No cases yet" heading and a filename also matches the upload notice that
+  quotes it. A strict-mode violation is a test defect, not a product defect:
+  scope to the section (`page.locator("#evidence")`) and pass `{ exact: true }`.
 - **No success without evidence.** If something is blocked, report it as
   blocked with the exact error and the attempted fix, rather than reporting
   success.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs four independent jobs on every push and pull
+request. All four must pass:
+
+- **unit** — `pnpm typecheck` and `pnpm test` against PGlite.
+- **postgres** — `pnpm test:pg` against a real `postgres:16` service. Set
+  `CASEFILE_TEST_PG_URL` locally to run the same suite; when it is unset the
+  suite is skipped rather than failed, so a missing server is never mistaken for
+  a passing one.
+- **browser** — `pnpm test:e2e`, the Playwright journeys, with `AUTH_DISABLED=1`
+  set only for that ephemeral job. The browser resolves a system Chromium
+  (`/usr/bin/chromium`) or, in CI, the one `playwright install chromium` places
+  in Playwright's own cache; override with `PLAYWRIGHT_CHROMIUM_EXECUTABLE`.
+- **build** — `pnpm build`, so the app still compiles for production.
 
 ## Skills
 
@@ -218,6 +276,25 @@ Use local docs only (no web research): `pnpm action docs-search --query "<topic>
 - Never fabricate. Report failures and recover; verify writes by reading the row or screen. Navigation is in `<current-screen>`; use `view-screen` for fresh visible-record details.
 
 For custom branding, keep `server/plugins/agent-native-email-branding.ts` aligned: `app.name` appears in transactional email and optional `app.logoUrl` must be an absolute HTTPS URL.
+
+## Demonstrations
+
+Two synthetic cases load through `load-demo-case` and run the real
+validate-store-extract-classify-graph pipeline, so neither hardcodes a result.
+
+- `scenario: "payment"` (default) — five documents about a disputed refund. The
+  merchant affirms a refund and the customer denies it on the same reference
+  (RRF-55210) at different amounts, so `analyze-evidence` proposes a genuine
+  contradiction.
+- `scenario: "court"` — six court documents that all carry case number
+  HC-2024-1234, so the graph links them into one proceeding. The judgment
+  recites counsel's submission, the defendant's allegation, and the court's own
+  finding in separate sentences, so `analyse-documents` must label them
+  differently. No real party, contract, or proceeding is represented.
+
+Loading is idempotent per scenario: reloading returns the existing case. The
+cases page offers both; `scripts/seed-demo-case.mjs [baseUrl] [payment|court]`
+seeds from the CLI.
 
 ## Application state
 

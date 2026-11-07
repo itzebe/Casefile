@@ -201,6 +201,12 @@ function structuralSignals(input: {
   text: string;
 }): Array<{ type: DocumentType; weight: number; label: string }> {
   const found: Array<{ type: DocumentType; weight: number; label: string }> = [];
+  // An .eml is an email by its own MIME type, whatever its body happens to say,
+  // so the type is decided structurally rather than by hoping the words
+  // "email" or "message" appear in it.
+  if (input.mimeType === "message/rfc822") {
+    found.push({ type: "email", weight: 6, label: "an email message (message/rfc822)" });
+  }
   const isTabular =
     input.mimeType === "text/csv" ||
     input.mimeType.includes("spreadsheetml") ||

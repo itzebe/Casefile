@@ -83,7 +83,7 @@ export interface InvestigationReport {
   timeline: ReportEvent[];
   undated: ReportEvent[];
   claims: ReportFinding[];
-  events: ReportFinding[];
+  events: ReportEvent[];
   /**
    * Only the comparisons that are actually contested. The graph action returns
    * every comparison, agreements included; a report field named
@@ -294,7 +294,7 @@ export async function buildReport(
     timeline: datedEvents,
     undated: undatedEvents,
     claims,
-    events: eventRows.map(toReportFinding),
+    events: eventRows.map(toReportEvent),
     contradictions: graph.comparisons.filter(
       (comparison) =>
         comparison.verdict === "contradiction" ||
@@ -580,4 +580,164 @@ function inline(text: string): string {
   return text
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+}
+
+/**
+ * The report as machine-readable JSON.
+ *
+ * This is the whole `InvestigationReport` object, unsummarised, so an
+ * integrator gets the same structure the UI renders - every statement, its
+ * provenance and review status, and every citation with its locator. It is not
+ * a second, lossier representation of the report: it is the report.
+ */
+export function renderReportJson(report: InvestigationReport): string {
+  return JSON.stringify(report, null, 2);
+}
+
+/** Escapes a value for a CSV field, quoting only when the value requires it. */
+function csvField(value: string | number | boolean | null | undefined): string {
+  if (value === null || value === undefined) return "";
+  const text = String(value);
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function csvRow(values: Array<string | number | boolean | null | undefined>): string {
+  return values.map(csvField).join(",");
+}
+
+/**
+ * The report as CSV, one row per statement, with a citation row beneath it for
+ * each source.
+ *
+ * The format is deliberate: a `record_type` column distinguishes a statement
+ * from its citations, and the statement row carries a `citation_count`, so the
+ * two kinds of row are never confused and a statement with no citation is
+ * visibly unsupported rather than silently absent. A flat, one-row-per-claim
+ * table loses the citations, which are the point of the record.
+ *
+ * Column order matters to a reader that splits on commas: the controlled
+ * columns (record_type, id, kind, provenance, review_status, confidence,
+ * citation_count) come first, and the free-text columns that may contain a
+ * comma come last. `citation_count` is therefore readable without a full CSV
+ * parser, which is the point of exporting a count.
+ */
+export function renderReportCsv(report: InvestigationReport): string {
+  const rows: string[] = [];
+  rows.push(
+    csvRow([
+      "record_type",
+      "id",
+      "kind",
+      "provenance",
+      "review_status",
+      "confidence",
+      "citation_count",
+      "event_date",
+      "event_date_text",
+      "date_precision",
+      "date_conflict",
+      "statement",
+      "source_filename",
+      "source_ref",
+      "source_quote",
+      "uncertainty",
+      "ordering_note",
+    ]),
+  );
+
+  const emitFinding = (kind: "claim" | "event", finding: ReportFinding) => {
+    rows.push(
+      csvRow([
+        "statement",
+        finding.id,
+        kind,
+        finding.provenance,
+        finding.reviewStatus,
+        finding.confidence,
+        finding.citations.length,
+        "",
+        "",
+        "",
+        "",
+        finding.statement,
+        "",
+        "",
+        "",
+        finding.uncertainty,
+        "",
+      ]),
+    );
+    for (const citation of finding.citations) {
+      rows.push(
+        csvRow([
+          "citation",
+          finding.id,
+          kind,
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          citation.filename,
+          citation.ref,
+          citation.quote,
+          "",
+          "",
+        ]),
+      );
+    }
+  };
+
+  for (const claim of report.claims) emitFinding("claim", claim);
+  for (const event of report.events) {
+    rows.push(
+      csvRow([
+        "statement",
+        event.id,
+        "event",
+        "",
+        event.reviewStatus,
+        "",
+        event.citations.length,
+        event.eventDate,
+        event.eventDateText,
+        event.datePrecision,
+        event.dateConflict,
+        event.statement,
+        "",
+        "",
+        "",
+        "",
+        event.orderingNote,
+      ]),
+    );
+    for (const citation of event.citations) {
+      rows.push(
+        csvRow([
+          "citation",
+          event.id,
+          "event",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          citation.filename,
+          citation.ref,
+          citation.quote,
+          "",
+          "",
+        ]),
+      );
+    }
+  }
+  return rows.join("\n") + "\n";
 }

@@ -1,5 +1,5 @@
 import { useActionMutation, useActionQuery } from "@agent-native/core/client/use-action";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { useState } from "react";
 
 import { StatusPill } from "@/components/casefile/badges";
@@ -78,6 +78,7 @@ function CaseRow({ item }: { item: CaseSummary }) {
 }
 
 export function CasesPage() {
+  const navigate = useNavigate();
   const [showCreate, setShowCreate] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -87,13 +88,33 @@ export function CasesPage() {
   const [error, setError] = useState<string | null>(null);
 
   const query = useActionQuery<{ cases: CaseSummary[] }>("list-cases", {});
-  const create = useActionMutation("create-case", {
-    onSuccess: () => {
+  const create = useActionMutation<{ id: string }>("create-case", {
+    onSuccess: (result) => {
       setShowCreate(false);
       setTitle("");
       setDescription("");
       setAmount("");
       setError(null);
+      // Open the case the user just created. Without this the form simply
+      // closes and the new case is invisible until a manual reload, which reads
+      // as a control that did nothing.
+      navigate(casePath(result.id));
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  const loadDemo = useActionMutation<{ caseId: string; created: boolean }>("load-demo-case", {
+    onSuccess: (result) => {
+      setError(null);
+      navigate(casePath(result.caseId));
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  const loadCourtDemo = useActionMutation<{ caseId: string; created: boolean }>("load-demo-case", {
+    onSuccess: (result) => {
+      setError(null);
+      navigate(casePath(result.caseId));
     },
     onError: (err: Error) => setError(err.message),
   });
@@ -134,9 +155,27 @@ export function CasesPage() {
         <span className="text-sm text-muted-foreground">
           {cases.length} case{cases.length === 1 ? "" : "s"}
         </span>
-        <Button onClick={() => setShowCreate((open) => !open)} variant={showCreate ? "outline" : "default"}>
-          {showCreate ? "Cancel" : "New case"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => loadDemo.mutate({})}
+            disabled={loadDemo.isPending}
+            data-testid="load-demo-case"
+          >
+            {loadDemo.isPending ? "Loading demo…" : "Load payment demo"}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => loadCourtDemo.mutate({ scenario: "court" })}
+            disabled={loadCourtDemo.isPending}
+            data-testid="load-court-demo-case"
+          >
+            {loadCourtDemo.isPending ? "Loading demo…" : "Load court demo"}
+          </Button>
+          <Button onClick={() => setShowCreate((open) => !open)} variant={showCreate ? "outline" : "default"}>
+            {showCreate ? "Cancel" : "New case"}
+          </Button>
+        </div>
       </div>
 
       {showCreate ? (
@@ -244,9 +283,35 @@ export function CasesPage() {
             <CardTitle className="text-base">No cases yet</CardTitle>
             <CardDescription>
               Open a case, then add the documents you already have: a receipt, a bank statement, a
-              contract, or your correspondence with the other side.
+              contract, or your correspondence with the other side. Or load the demonstration case
+              to see a finished investigation first.
             </CardDescription>
           </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={() => loadDemo.mutate({})}
+                disabled={loadDemo.isPending}
+                data-testid="load-demo-case-empty"
+              >
+                {loadDemo.isPending ? "Loading demo…" : "Load the payment demo"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => loadCourtDemo.mutate({ scenario: "court" })}
+                disabled={loadCourtDemo.isPending}
+                data-testid="load-court-demo-case-empty"
+              >
+                {loadCourtDemo.isPending ? "Loading demo…" : "Load the court demo"}
+              </Button>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              The payment demo is five synthetic documents about a disputed refund. The court demo
+              is six synthetic documents that separate a party&apos;s allegation from a court&apos;s
+              finding. Neither represents a real party, payment, or proceeding.
+            </p>
+          </CardContent>
         </Card>
       ) : (
         <div className="space-y-3">

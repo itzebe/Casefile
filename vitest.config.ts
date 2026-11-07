@@ -16,6 +16,9 @@ export default defineConfig({
       "**/.git/**",
       "**/dist/**",
       "**/.react-router/**",
+      // The PostgreSQL integration suite needs a real server; it runs under
+      // `vitest.pg.config.ts` via `pnpm test:pg`.
+      "tests/pg/**",
     ],
   },
 });

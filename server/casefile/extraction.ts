@@ -11,6 +11,7 @@
  */
 
 import { extractDocx, extractMarkdown, extractXlsx } from "./ooxml.js";
+import { extractEmail } from "./email.js";
 
 export type LocatorType = "page" | "row" | "chunk" | "document";
 
@@ -314,6 +315,8 @@ export async function extractEvidence(input: {
       return extractMarkdown(input.data);
     case "text/csv":
       return extractCsvFile(input.data);
+    case "message/rfc822":
+      return extractEmail(input.data);
     case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
       return extractDocx(input.data);
     case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":

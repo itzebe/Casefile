@@ -181,22 +181,55 @@ describe("extractImageFile (OCR)", () => {
     hasEngine = ocrBinaryPath() !== null;
   });
 
-  it("reads text from a real image with the configured OCR engine", async () => {
-    // Skipped rather than faked when no engine is configured: a test that
-    // stubbed OCR would not prove the real path works.
-    if (!hasEngine) return;
-    const bytes = new Uint8Array(
-      readFileSync(fileURLToPath(new URL("./fixtures/ocr-receipt.png", import.meta.url))),
+  it("discovers a tesseract binary on PATH without an explicit override", async () => {
+    // Regression: OCR used to require CASEFILE_TESSERACT_PATH to be set by hand,
+    // so a machine with tesseract installed still reported every image as
+    // unreadable. Discovery must find a binary on PATH on its own. The test
+    // skips only when no engine is installed at all.
+    const { discoverTesseractOnPath, ocrBinaryPath } = await import(
+      "../server/casefile/ocr.js"
     );
-    const result = await extractImageFile(bytes, "image/png");
-    expect(result.status).toBe("complete");
-    const text = result.passages.map((passage) => passage.text).join("\n");
-    expect(text).toContain("PAYMENT RECEIPT");
-    expect(text).toContain("Northwind Traders");
-    expect(text).toContain("TXN-88421907");
-    expect(text).toContain("249.99");
-    expect(result.passages[0].ref).toBe("image text 1");
+    const { execFileSync } = await import("node:child_process");
+    let onPath: string | null = null;
+    try {
+      onPath = execFileSync("which", ["tesseract"], { encoding: "utf8" }).trim() || null;
+    } catch {
+      onPath = null;
+    }
+    if (!onPath) {
+      // No engine on this machine; discovery must still answer cleanly.
+      expect(discoverTesseractOnPath()).toBeNull();
+      expect(ocrBinaryPath()).toBeNull();
+      return;
+    }
+    // A binary exists on PATH, so discovery must find it on its own - the
+    // regression this pins was requiring an env var to be set by hand.
+    expect(discoverTesseractOnPath()).toBe(onPath);
+    expect(ocrBinaryPath()).toBe(onPath);
   });
+
+  it(
+    "reads text from a real image with the configured OCR engine",
+    async () => {
+      // Skipped rather than faked when no engine is configured: a test that
+      // stubbed OCR would not prove the real path works.
+      if (!hasEngine) return;
+      const bytes = new Uint8Array(
+        readFileSync(fileURLToPath(new URL("./fixtures/ocr-receipt.png", import.meta.url))),
+      );
+      const result = await extractImageFile(bytes, "image/png");
+      expect(result.status).toBe("complete");
+      const text = result.passages.map((passage) => passage.text).join("\n");
+      expect(text).toContain("PAYMENT RECEIPT");
+      expect(text).toContain("Northwind Traders");
+      expect(text).toContain("TXN-88421907");
+      expect(text).toContain("249.99");
+      expect(result.passages[0].ref).toBe("image text 1");
+    },
+    // Spawning tesseract on a real image takes several seconds; the default 5s
+    // budget is for pure functions, not for an external process.
+    30_000,
+  );
 
   it("reports an image with no readable text as unsupported, never empty", async () => {
     if (!hasEngine) return;
@@ -206,7 +239,7 @@ describe("extractImageFile (OCR)", () => {
     const result = await extractImageFile(pngBytes(), "image/png");
     expect(result.status).toBe("unsupported");
     expect(result.limitation).toMatch(/no readable text/i);
-  });
+  }, 30_000);
 });
 
 describe("DOCX extraction", () => {

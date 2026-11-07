@@ -179,4 +179,44 @@ export const MIGRATIONS: MigrationEntry[] = [
           ADD COLUMN IF NOT EXISTS classification_corrected_at TIMESTAMPTZ;
       `,
     },
+    {
+      version: 4,
+      name: "casefile-evidence-digest-unique",
+      sql: `
+        -- A case holds one row per document, not one per upload attempt. The
+        -- upload path checked for a duplicate digest and then inserted, which
+        -- two concurrent uploads of the same file could both pass, producing a
+        -- second row for one document. The unique index below is what makes the
+        -- check enforceable; the deletes above it are a one-time repair of any
+        -- row a pre-index race already created, keeping the earliest copy and
+        -- its passages and blob, so the index can be built.
+        DELETE FROM casefile_evidence_passages
+        WHERE evidence_id IN (
+          SELECT id FROM (
+            SELECT id, row_number() OVER (PARTITION BY case_id, sha256 ORDER BY created_at, id) AS rn
+            FROM casefile_evidence
+          ) ranked WHERE rn > 1
+        );
+
+        DELETE FROM casefile_evidence_blobs
+        WHERE storage_key IN (
+          SELECT storage_key FROM (
+            SELECT storage_key, row_number() OVER (PARTITION BY case_id, sha256 ORDER BY created_at, id) AS rn
+            FROM casefile_evidence
+          ) ranked WHERE rn > 1
+        );
+
+        DELETE FROM casefile_evidence
+        WHERE id IN (
+          SELECT id FROM (
+            SELECT id, row_number() OVER (PARTITION BY case_id, sha256 ORDER BY created_at, id) AS rn
+            FROM casefile_evidence
+          ) ranked WHERE rn > 1
+        );
+
+        DROP INDEX IF EXISTS casefile_evidence_digest_idx;
+        CREATE UNIQUE INDEX IF NOT EXISTS casefile_evidence_case_digest_uidx
+          ON casefile_evidence (case_id, sha256);
+      `,
+    },
   ];

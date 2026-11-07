@@ -114,6 +114,13 @@ describe("classification, readiness, and report wiring", () => {
     expect(workspaceSource).toContain("Export Markdown");
     expect(workspaceSource).toContain("Export HTML");
     expect(workspaceSource).toContain("Export Word");
+    expect(workspaceSource).toContain("Export PDF");
+    expect(workspaceSource).toContain("Export JSON");
+    expect(workspaceSource).toContain("Export CSV");
+  });
+
+  it("offers .eml in the evidence picker", () => {
+    expect(workspaceSource).toContain(".eml");
   });
 
   it("downloads an export through a blob rather than a public URL", () => {
@@ -163,6 +170,68 @@ describe("investigation brief and navigation wiring", () => {
   });
 });
 
+describe("analysis timeout hierarchy", () => {
+  /**
+   * The hosting platform stops a function at 300s. Three budgets have to nest
+   * under that limit, or a long analysis dies in a way the browser cannot
+   * explain: the platform kill and the client's own abort land together, and
+   * the click looks like it did nothing at all.
+   */
+  const PLATFORM_FUNCTION_LIMIT_MS = 300_000;
+  const modelSource = readFileSync(
+    fileURLToPath(new URL("../server/casefile/model.ts", import.meta.url)),
+    "utf8",
+  );
+
+  it("keeps the client's analysis budget under the platform function limit", async () => {
+    const { ANALYSIS_TIMEOUT_MS } = await import(
+      "../app/components/casefile/CaseWorkspace.tsx"
+    );
+    expect(ANALYSIS_TIMEOUT_MS).toBeLessThan(PLATFORM_FUNCTION_LIMIT_MS);
+  });
+
+  it("keeps the server's model budget under the platform function limit", () => {
+    const match = modelSource.match(/const DEFAULT_TIMEOUT_MS = ([\d_]+)/);
+    expect(match).not.toBeNull();
+    const serverModelTimeoutMs = Number(match![1].replace(/_/g, ""));
+    expect(serverModelTimeoutMs).toBeLessThan(PLATFORM_FUNCTION_LIMIT_MS);
+  });
+
+  it("lets the client outlast the server so the server's reason is seen", async () => {
+    // The client timeout must be strictly above the server's model budget.
+    // When it was 240s against a 260s server budget the browser dropped the
+    // request 20s before the server would have answered, so the stated reason
+    // ("ran out of its 260s budget") never reached the user - the failure read
+    // as a dead click. Both numbers sat under the platform limit, so the two
+    // checks above passed while the nesting was still wrong.
+    const { ANALYSIS_TIMEOUT_MS } = await import(
+      "../app/components/casefile/CaseWorkspace.tsx"
+    );
+    const match = modelSource.match(/const DEFAULT_TIMEOUT_MS = ([\d_]+)/);
+    const serverModelTimeoutMs = Number(match![1].replace(/_/g, ""));
+    expect(ANALYSIS_TIMEOUT_MS).toBeGreaterThan(serverModelTimeoutMs);
+  });
+});
+
+describe("analysis progress is visible", () => {
+  it("shows how long the running analysis has been going", () => {
+    // A button that reads the same at second 1 and second 120 is
+    // indistinguishable from a click that never registered.
+    expect(workspaceSource).toContain("analysisStartedAt");
+    expect(workspaceSource).toContain("analysisElapsed");
+    expect(workspaceSource).toContain("Elapsed ${analysisElapsed}s");
+  });
+
+  it("clears a previous result and error when a new analysis starts", () => {
+    const onClick = workspaceSource.slice(
+      workspaceSource.indexOf("setAnalysisStartedAt(Date.now())") - 200,
+      workspaceSource.indexOf("setAnalysisStartedAt(Date.now())"),
+    );
+    expect(onClick).toContain("setNotice(null)");
+    expect(onClick).toContain("setError(null)");
+  });
+});
+
 describe("landing page is product-specific", () => {
   const homeSource = readFileSync(
     fileURLToPath(new URL("../app/components/home/HomePage.tsx", import.meta.url)),
@@ -179,5 +248,56 @@ describe("landing page is product-specific", () => {
     expect(homeSource).toContain("Evidence intelligence");
     expect(homeSource).toContain("CASES_PATH");
     expect(homeSource).toContain("Analysis proposes");
+  });
+});
+
+describe("both demonstrations are reachable from the cases page", () => {
+  const casesSource = readFileSync(
+    fileURLToPath(new URL("../app/components/casefile/CasesPage.tsx", import.meta.url)),
+    "utf8",
+  );
+
+  it("offers the payment and court demos, each naming its scenario", () => {
+    expect(casesSource).toContain('data-testid="load-demo-case"');
+    expect(casesSource).toContain('data-testid="load-court-demo-case"');
+    // The court button must actually request the court scenario, not the
+    // default, or both buttons load the same case.
+    expect(casesSource).toContain('scenario: "court"');
+  });
+
+  it("offers both demos from the empty state too", () => {
+    expect(casesSource).toContain('data-testid="load-demo-case-empty"');
+    expect(casesSource).toContain('data-testid="load-court-demo-case-empty"');
+  });
+});
+
+/**
+ * Tap targets.
+ *
+ * A control a person must aim at needs a 24x24 CSS-pixel hit area (WCAG 2.5.8,
+ * Target Size Minimum). The workspace once shipped block and list controls at
+ * 16px tall - a 16px-tall "Confirm" beside a 16px-tall "Dismiss" is a
+ * mis-tap waiting to happen. Inline links inside a sentence are exempt, so the
+ * one underlined control without vertical padding (the quoted-passage link) is
+ * deliberately excluded and asserted here so the exemption stays intentional.
+ */
+describe("tap targets in the case workspace", () => {
+  const buttonTags = [...workspaceSource.matchAll(/<button[\s\S]*?>/g)].map((m) => m[0]);
+  const underlined = buttonTags.filter((tag) => tag.includes("underline"));
+
+  it("finds the underlined controls it means to police", () => {
+    expect(underlined.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("gives every non-inline underlined control vertical padding", () => {
+    const offenders = underlined.filter(
+      (tag) => !/\bpy-/.test(tag) && !/ms-1 underline/.test(tag),
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps exactly one inline quoted-passage link exempt", () => {
+    const exempt = underlined.filter((tag) => /ms-1 underline/.test(tag));
+    expect(exempt).toHaveLength(1);
   });
 });

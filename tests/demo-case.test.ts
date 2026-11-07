@@ -173,3 +173,124 @@ describe("demo case contradiction guarantee", () => {
     expect(graph.counts.agreements).toBeGreaterThanOrEqual(1);
   });
 });
+
+describe("load-demo-case", () => {
+  beforeEach(async () => {
+    await setupTestDatabase();
+  });
+
+  it("builds the demonstration case from the bundled documents through the real pipeline", async () => {
+    const result = await callAction<{
+      caseId: string;
+      created: boolean;
+      documents: { total: number; complete: number };
+      counts: { documents: number; relationships: number };
+    }>("load-demo-case", {}, userContext(OWNER));
+
+    expect(result.created).toBe(true);
+    expect(result.documents.total).toBe(5);
+    expect(result.documents.complete).toBe(5);
+    expect(result.counts.documents).toBe(5);
+    // Loading is deterministic and does not call a model, so it links the
+    // documents but proposes no claims. The contradiction appears only after
+    // `analyze-evidence`, which is the human-in-the-loop step the demo teaches.
+    expect(result.counts.relationships).toBeGreaterThan(0);
+
+    const stored = await callAction<{
+      case: { id: string; title: string };
+      evidence: unknown[];
+    }>("get-case", { caseId: result.caseId }, userContext(OWNER));
+    expect(stored.case.title).toContain("DEMO");
+    expect(stored.evidence).toHaveLength(5);
+
+    // The raw material the contradiction engine needs is present: the merchant
+    // email and the bank statement both carry refund reference RRF-55210.
+    const evidence = await callAction<{ passages: Array<{ text: string }> }>(
+      "get-evidence",
+      { caseId: result.caseId, evidenceId: (stored.evidence[0] as { id: string }).id },
+      userContext(OWNER),
+    );
+    expect(evidence.passages.length).toBeGreaterThan(0);
+  });
+
+  it("builds the court demonstration and links its documents on the shared case number", async () => {
+    const result = await callAction<{
+      caseId: string;
+      created: boolean;
+      documents: { total: number; complete: number };
+      counts: { documents: number; relationships: number };
+    }>("load-demo-case", { scenario: "court" }, userContext(OWNER));
+
+    expect(result.created).toBe(true);
+    expect(result.documents.total).toBe(6);
+    expect(result.documents.complete).toBe(6);
+    expect(result.counts.documents).toBe(6);
+    // Every document carries the case number HC-2024-1234, so the graph must
+    // link them into one proceeding rather than leaving six loose files.
+    expect(result.counts.relationships).toBeGreaterThan(0);
+  });
+
+  it("labels a counsel submission, a party allegation, and a court finding differently", async () => {
+    const loaded = await callAction<{ caseId: string }>(
+      "load-demo-case",
+      { scenario: "court" },
+      userContext(OWNER),
+    );
+    const analysis = await callAction<{
+      findings: Array<{ role: string; statement: string }>;
+    }>("analyse-documents", { caseId: loaded.caseId, domain: "legal" }, userContext(OWNER));
+    const roles = analysis.findings.map((finding) => finding.role);
+    expect(roles).toContain("counsel-argument");
+    expect(roles).toContain("party-allegation");
+    expect(roles).toContain("judicial-finding");
+    // The sentence reciting counsel must not be labelled the court's finding.
+    const counsel = analysis.findings.find((finding) =>
+      /counsel for the claimant submitted/i.test(finding.statement),
+    );
+    expect(counsel?.role).toBe("counsel-argument");
+  });
+
+  it("keeps the two demonstrations separate and idempotent by scenario", async () => {
+    const payment = await callAction<{ caseId: string; created: boolean }>(
+      "load-demo-case",
+      {},
+      userContext(OWNER),
+    );
+    const court = await callAction<{ caseId: string; created: boolean }>(
+      "load-demo-case",
+      { scenario: "court" },
+      userContext(OWNER),
+    );
+    expect(court.caseId).not.toBe(payment.caseId);
+    // Reloading either scenario returns the same case, not a duplicate.
+    const paymentAgain = await callAction<{ caseId: string; created: boolean }>(
+      "load-demo-case",
+      {},
+      userContext(OWNER),
+    );
+    expect(paymentAgain.created).toBe(false);
+    expect(paymentAgain.caseId).toBe(payment.caseId);
+    const listed = await callAction<{ cases: unknown[] }>("list-cases", {}, userContext(OWNER));
+    expect(listed.cases).toHaveLength(2);
+  });
+
+  it("returns the existing case instead of creating a duplicate", async () => {
+    const first = await callAction<{ caseId: string; created: boolean }>(
+      "load-demo-case",
+      {},
+      userContext(OWNER),
+    );
+    const second = await callAction<{ caseId: string; created: boolean }>(
+      "load-demo-case",
+      {},
+      userContext(OWNER),
+    );
+
+    expect(first.created).toBe(true);
+    expect(second.created).toBe(false);
+    expect(second.caseId).toBe(first.caseId);
+
+    const listed = await callAction<{ cases: unknown[] }>("list-cases", {}, userContext(OWNER));
+    expect(listed.cases).toHaveLength(1);
+  });
+});

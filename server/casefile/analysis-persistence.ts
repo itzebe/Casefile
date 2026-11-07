@@ -123,7 +123,7 @@ export async function persistAnalysis(input: PersistAnalysisInput): Promise<Pers
       await insertFinding({
         kind: "event",
         statement: event.description,
-        provenance: event.citations.length > 0 ? "documented" : "unverified",
+        provenance: event.provenance,
         confidence: event.confidence,
         uncertainty: event.uncertainty,
         citations: event.citations,

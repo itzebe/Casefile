@@ -1,0 +1,115 @@
+name: CI
+
+# CASEFILE's verification gate. Four independent jobs, because each proves
+# something the others cannot:
+#   - unit       the deterministic engine and the real action layer (PGlite)
+#   - postgres   the same action layer against the database production runs
+#   - browser    the real UI in a real browser, including the agent-native flow
+#   - build      that the app still compiles for production
+# A green run is the only claim this project makes about "working".
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Playwright is used through playwright-core against a system/managed browser;
+  # this keeps any incidental download out of the unit jobs.
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+
+jobs:
+  unit:
+    name: Unit and integration (PGlite)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+
+  postgres:
+    name: PostgreSQL integration
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: casefile
+          POSTGRES_PASSWORD: casefile
+          POSTGRES_DB: casefile_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U casefile"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run the suite against a real server
+        env:
+          CASEFILE_TEST_PG_URL: postgres://casefile:casefile@127.0.0.1:5432/casefile_test
+        run: pnpm test:pg
+
+  browser:
+    name: Browser end-to-end
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Chromium for Playwright
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "0"
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Run the journeys
+        # AUTH_DISABLED is the documented local/preview sign-in path and is set
+        # only for this ephemeral job; it is never set in a deployed environment.
+        env:
+          AUTH_DISABLED: "1"
+        run: pnpm exec playwright test --reporter=list
+      - name: Upload the failure report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
+  build:
+    name: Production build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build

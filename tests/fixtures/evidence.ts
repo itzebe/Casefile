@@ -61,6 +61,58 @@ Regards,
 J. Rivera
 `;
 
+/** A multipart message: a quoted-printable text body and one attachment. */
+export const MULTIPART_EMAIL_TEXT = `From: accounts@supplier.example
+To: ap@buyer.example
+Cc: audit@buyer.example
+Date: Mon, 18 Mar 2024 09:12:00 +0000
+Subject: Invoice INV-4471 attached
+Message-ID: <inv4471@supplier.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="BOUND-42"
+
+--BOUND-42
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+Please find invoice INV-4471 for =C2=A3500.00 attached.
+Payment was due on 2024-03-15 under the agreed payment terms.
+--BOUND-42
+Content-Type: application/pdf; name="INV-4471.pdf"
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="INV-4471.pdf"
+
+JVBERi0xLjQKJSVFT0Y=
+--BOUND-42--
+`;
+
+/** An HTML-only message, so the extractor must reduce it and say so. */
+export const HTML_EMAIL_TEXT = `From: noreply@shop.example
+To: customer@example.com
+Date: 2024-03-18
+Subject: Your order has shipped
+MIME-Version: 1.0
+Content-Type: text/html; charset="utf-8"
+
+<html><body>
+<p>Your order <b>ORD-55231</b> has shipped.</p>
+<p>Expected delivery: 2024-03-20.</p>
+</body></html>
+`;
+
+/** A subject using RFC 2047 encoded words (UTF-8 base64). */
+export const ENCODED_SUBJECT_EMAIL_TEXT = `From: =?utf-8?B?Sm9zw6kgR2FyY8OtYQ==?= <jose@example.es>
+To: legal@example.com
+Date: 2024-03-18
+Subject: =?utf-8?Q?Firma_del_contrato_=E2=9C=94?=
+
+Confirming we signed the agreement on 2024-03-17.
+`;
+
+export function emlBytes(text: string): Uint8Array {
+  return new TextEncoder().encode(text);
+}
+
 function csvCell(value: string): string {
   return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }

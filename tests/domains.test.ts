@@ -152,6 +152,42 @@ describe("research intelligence", () => {
   });
 });
 
+describe("general (domain-neutral) intelligence", () => {
+  it("labels an instruction, a commitment, a belief, an open question, and a dated record", () => {
+    const cases: Array<[string, string]> = [
+      ["Please send the signed copy by Friday.", "instruction"],
+      ["I will consider your proposal and reply.", "commitment"],
+      ["I believe the payment was made in error.", "stated-belief"],
+      ["It remains unclear whether the parcel was ever dispatched.", "identified-question"],
+      ["The notice was received on 2024-03-11.", "recorded-fact"],
+    ];
+    for (const [text, role] of cases) {
+      const findings = analyse(text);
+      expect(findings.map((f) => f.role)).toContain(role);
+      expect(findings.every((f) => f.domain === "general")).toBe(true);
+    }
+  });
+
+  it("does not label a general sentence that has no general marker", () => {
+    expect(analyse("The quick brown fox jumped over the lazy dog.")).toHaveLength(0);
+  });
+
+  it("never double-labels: a specialist sentence is not also given a general role", () => {
+    // "The court finds" is legal; the same sentence also contains "was received",
+    // which the general recorded-fact rule would otherwise match. The specialist
+    // rule must win outright, so no general finding appears for this sentence.
+    const findings = analyse("The court finds that the notice was received on 2024-03-11.");
+    expect(findings.some((f) => f.domain === "legal")).toBe(true);
+    expect(findings.some((f) => f.domain === "general")).toBe(false);
+  });
+
+  it("counts the general domain in the summary like any other", () => {
+    const findings = analyse("I promise to look into it.");
+    const summary = summariseDomains(findings);
+    expect(summary.find((entry) => entry.domain === "general")?.total).toBe(1);
+  });
+});
+
 describe("summaries", () => {
   it("counts by domain and role, and omits empty domains", () => {
     const findings = analyse(

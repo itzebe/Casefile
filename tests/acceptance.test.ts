@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { callAction, setupTestDatabase, userContext } from "./helpers/harness.js";
+import { DOCUMENT_TYPES } from "../shared/casefile/types.js";
 import {
   SCENARIOS,
   SCENARIO_CONTRACT,
@@ -197,6 +198,56 @@ describe("acceptance scenarios", () => {
 
       it("exports the report in every format with identical review marks", async () => {
         const { caseId } = await runScenario(scenario);
+        // Seed a claim and an event with a citation each, so the JSON and CSV
+        // assertions below are not vacuous: a report with no findings would
+        // satisfy "the CSV has a header row" without proving anything.
+        const { getDb, schema } = await import("./helpers/harness.js");
+        const db = getDb();
+        const passages = await db.select().from(schema.evidencePassages);
+        const passage = passages.find((p) => p.evidenceId) ?? passages[0]!;
+        await db.insert(schema.findings).values({
+          id: "fnd_export_claim",
+          caseId,
+          ownerEmail: OWNER,
+          kind: "claim",
+          statement: "The transfer receipt records an approved payment of 249.99 USD.",
+          provenance: "documented",
+          reviewStatus: "proposed",
+          extractionMethod: "documented",
+        });
+        await db.insert(schema.findingCitations).values({
+          id: "cit_export_claim",
+          findingId: "fnd_export_claim",
+          evidenceId: passage.evidenceId,
+          passageId: passage.id,
+          caseId,
+          ownerEmail: OWNER,
+          quote: passage.text.slice(0, 40),
+        });
+        await db.insert(schema.findings).values({
+          id: "fnd_export_event",
+          caseId,
+          ownerEmail: OWNER,
+          kind: "event",
+          statement: "The charge was made on 2024-03-15.",
+          provenance: "documented",
+          reviewStatus: "proposed",
+          extractionMethod: "documented",
+          eventDate: "2024-03-15",
+          eventDateText: "2024-03-15",
+          datePrecision: "day",
+          dateConflict: false,
+        });
+        await db.insert(schema.findingCitations).values({
+          id: "cit_export_event",
+          findingId: "fnd_export_event",
+          evidenceId: passage.evidenceId,
+          passageId: passage.id,
+          caseId,
+          ownerEmail: OWNER,
+          quote: passage.text.slice(0, 40),
+        });
+
         const markdown = await callAction<{ contentBase64: string; filename: string }>(
           "export-report",
           { caseId, format: "markdown" },
@@ -212,6 +263,21 @@ describe("acceptance scenarios", () => {
           { caseId, format: "docx" },
           userContext(OWNER),
         );
+        const pdf = await callAction<{ contentBase64: string; filename: string }>(
+          "export-report",
+          { caseId, format: "pdf" },
+          userContext(OWNER),
+        );
+        const json = await callAction<{ contentBase64: string; filename: string; mimeType: string }>(
+          "export-report",
+          { caseId, format: "json" },
+          userContext(OWNER),
+        );
+        const csv = await callAction<{ contentBase64: string; filename: string; mimeType: string }>(
+          "export-report",
+          { caseId, format: "csv" },
+          userContext(OWNER),
+        );
         const md = Buffer.from(markdown.contentBase64, "base64").toString("utf8");
         expect(markdown.filename).toMatch(/\.md$/);
         expect(md).toContain("# Investigation report");
@@ -219,6 +285,49 @@ describe("acceptance scenarios", () => {
         // A DOCX is a ZIP; check the signature.
         const docxBytes = Buffer.from(docx.contentBase64, "base64");
         expect(docxBytes.subarray(0, 2).toString("latin1")).toBe("PK");
+        // A PDF must start with the header and end with the EOF marker, or a
+        // reader rejects it. The bytes are also what a person downloads.
+        const pdfBytes = Buffer.from(pdf.contentBase64, "base64");
+        expect(pdf.filename).toMatch(/\.pdf$/);
+        expect(pdfBytes.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+        expect(pdfBytes.subarray(-6).toString("latin1").trim()).toBe("%%EOF");
+
+        // JSON must be the real report object, not a summary: it parses, and it
+        // carries the same claims and citations the markdown export does.
+        expect(json.filename).toMatch(/\.json$/);
+        expect(json.mimeType).toBe("application/json");
+        const parsed = JSON.parse(Buffer.from(json.contentBase64, "base64").toString("utf8"));
+        expect(parsed.title).toBeTruthy();
+        expect(Array.isArray(parsed.claims)).toBe(true);
+        expect(Array.isArray(parsed.events)).toBe(true);
+        expect(Array.isArray(parsed.documentRegister)).toBe(true);
+        // The seeded claim and event must survive into the JSON intact.
+        expect(parsed.claims).toHaveLength(1);
+        expect(parsed.events).toHaveLength(1);
+        expect(parsed.claims[0].statement).toContain("249.99 USD");
+        expect(parsed.claims[0].citations).toHaveLength(1);
+        expect(parsed.events[0].eventDate).toBe("2024-03-15");
+
+        // CSV must be one header row, then a statement row per claim/event with
+        // a citation row beneath each. A statement's citation_count must equal
+        // the number of citation rows that follow it, or the export lies about
+        // which statements are supported.
+        expect(csv.filename).toMatch(/\.csv$/);
+        expect(csv.mimeType).toBe("text/csv");
+        const csvText = Buffer.from(csv.contentBase64, "base64").toString("utf8");
+        const lines = csvText.trimEnd().split("\n");
+        expect(lines[0]).toContain("record_type");
+        // The controlled columns precede the free-text ones, so the leading
+        // field identifies the row type even when a statement contains a comma.
+        const statementRows = lines.filter((line) => line.startsWith("statement,"));
+        const citationRows = lines.filter((line) => line.startsWith("citation,"));
+        expect(statementRows.length).toBe(parsed.claims.length + parsed.events.length);
+        // citation_count is the 7th column; it must equal the number of
+        // citation rows, or the export misreports which statements are supported.
+        const countedCitations = statementRows.reduce((total, row) => {
+          return total + Number(row.split(",")[6] ?? 0);
+        }, 0);
+        expect(countedCitations).toBe(citationRows.length);
       });
 
       it("keeps one user's case invisible to another", async () => {
@@ -331,6 +440,45 @@ describe("acceptance scenarios", () => {
       }>("build-case-graph", { caseId }, userContext(OWNER));
       const shared = graph.relationships.filter((r) => r.relationType === "same_identifier");
       expect(shared.some((r) => (r.matchKey ?? "").includes("pol778812"))).toBe(true);
+    });
+  });
+
+  describe("get-case evidence contract", () => {
+    /**
+     * Regression: the evidence panel renders a document-type `<select>` bound to
+     * `item.documentType`. `get-case` omitted the classification fields, so the
+     * select fell back to its first option and every file read "Court judgment"
+     * while the stored type was correct. The workspace reads these fields from
+     * get-case, so get-case must return them.
+     */
+    it("returns the classification fields the evidence panel binds to", async () => {
+      const { caseId } = await runScenario(SCENARIO_PAYMENT);
+      const detail = await callAction<{
+        evidence: Array<{
+          id: string;
+          filename: string;
+          documentType: string;
+          classificationConfidence: string | null;
+          classificationCorrectedBy: string | null;
+        }>;
+      }>("get-case", { caseId }, userContext(OWNER));
+
+      expect(detail.evidence).toHaveLength(SCENARIO_PAYMENT.documents.length);
+      for (const item of detail.evidence) {
+        expect(item.documentType).toBeTruthy();
+        expect(DOCUMENT_TYPES).toContain(item.documentType);
+        expect(["high", "medium", "low"]).toContain(item.classificationConfidence);
+        // Nothing has been corrected by a person yet.
+        expect(item.classificationCorrectedBy).toBeNull();
+      }
+
+      // The values must match what list-evidence reports for the same files, or
+      // the two surfaces disagree about the same document.
+      const listed = await listEvidence(caseId);
+      const byId = new Map(listed.evidence.map((entry) => [entry.id, entry]));
+      for (const item of detail.evidence) {
+        expect(byId.get(item.id)?.documentType).toBe(item.documentType);
+      }
     });
   });
 });

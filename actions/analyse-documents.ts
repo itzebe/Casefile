@@ -24,7 +24,7 @@ import * as schema from "../server/db/schema.js";
  */
 export default defineAction({
   description:
-    "Analyse a case's documents for their field-specific content: legal findings vs party allegations vs witness assertions, financial amounts by role (requested/invoiced/transferred/received/refunded/balance), contract obligations and terms, medical observations vs conclusions, and research claims vs methods vs results. Returns each labelled sentence with its source locator.",
+    "Analyse a case's documents for their field-specific content: legal findings vs party allegations vs witness assertions, financial amounts by role (requested/invoiced/transferred/received/refunded/balance), contract obligations and terms, medical observations vs conclusions, and research claims vs methods vs results. For sentences no field-specific rule recognises, it falls back to the domain-neutral vocabulary (instructions, commitments, stated beliefs, open questions, dated records), so a document outside the five specialist fields still yields labels. Returns each labelled sentence with its source locator.",
   schema: z.object({
     caseId: z.string().min(1).describe("The case to analyse."),
     domain: z

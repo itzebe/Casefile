@@ -47,6 +47,7 @@ export interface ProposedClaim {
 
 export interface ProposedEvent {
   description: string;
+  provenance: Provenance;
   dateText: string | null;
   dateIso: string | null;
   datePrecision: DatePrecision;
@@ -279,19 +280,67 @@ export function resolveCitations(
 }
 
 /**
+ * Verbs that report *someone else's* assertion rather than the document
+ * recording a fact. A pleading "alleges", a defence "avers", counsel
+ * "submitted". The document is real, but what it records is a claim by a party
+ * - so a finding resting only on such a passage is `asserted`, not
+ * `documented`.
+ */
+const HEARSAY_MARKERS = [
+  "alleges",
+  "alleged",
+  "allegation",
+  "avers",
+  "submitted that",
+  "submits that",
+  "contends",
+  "contended",
+  "claims that",
+  "claimed that",
+  "denies that",
+  "denied that",
+  "asserts that",
+  "asserted that",
+  "it is alleged",
+  "is said to have",
+];
+
+/**
+ * True when the cited text reports a party's assertion rather than recording a
+ * fact directly. Deliberately matches on the *document's* verbs, so a judgment
+ * that "finds" or "orders" is not affected - those are the court's own record,
+ * which is the one place in a court file where a fact really is documented.
+ */
+export function reportsAnothersAssertion(text: string): boolean {
+  const lower = text.toLowerCase();
+  return HEARSAY_MARKERS.some((marker) => lower.includes(marker));
+}
+
+/**
  * Provenance is derived server-side. A claim the model labelled `documented`
  * but did not cite is downgraded to `unverified`, because nothing in the record
  * supports it. This is the check that keeps the word "documented" meaningful.
+ *
+ * A second check downgrades `documented` to `asserted` when every cited passage
+ * only *reports an allegation*. Without it the court demonstration stored "the
+ * defendant failed to deliver" - a claim the pleading merely alleges - as a
+ * documented fact, which is the exact error the product exists to prevent. The
+ * document is real; what it records is still only a party's word.
  */
 export function deriveProvenance(
   raw: unknown,
   citations: AnalysisCitation[],
+  citedText = "",
 ): Provenance {
   const claimed = oneOf(raw, PROVENANCE);
   if (citations.length === 0) return "unverified";
   if (!claimed || claimed === "unverified") return "inferred";
+  if (claimed === "documented" && reportsAnothersAssertion(citedText)) {
+    return "asserted";
+  }
   return claimed;
 }
+
 
 export async function analyzeCaseEvidence(
   caseId: string,
@@ -311,7 +360,13 @@ export async function analyzeCaseEvidence(
     : await runModel({
         systemPrompt: SYSTEM_PROMPT,
         userPrompt,
-        maxOutputTokens: 4096,
+        // The cap has to fit inside the time budget, or the run is cut off
+        // mid-JSON. On CPU this workspace generates roughly 9-14 tokens/second,
+        // so a 4096-token cap needs up to ~7 minutes while the budget allows
+        // 290s - the model was being stopped partway through the object. The
+        // prompt asks for at most 12 claims, 12 events, and 8 parties, which is
+        // well under 3000 tokens, so this cap is never the binding constraint.
+        maxOutputTokens: 3000,
         signal: options?.signal,
       });
 
@@ -323,9 +378,19 @@ export async function analyzeCaseEvidence(
     const statement = asString((entry as { statement?: unknown }).statement, 1000);
     if (!statement) continue;
     const citations = resolveCitations((entry as { citations?: unknown }).citations, bundle);
+    // The text actually behind the citations decides provenance, not the
+    // model's label: a passage that only reports an allegation cannot make the
+    // claim "documented".
+    const citedText = citations
+      .map((c) => (c.passageId ? bundle.passagesById.get(c.passageId)?.text ?? "" : ""))
+      .join(" ");
     claims.push({
       statement,
-      provenance: deriveProvenance((entry as { provenance?: unknown }).provenance, citations),
+      provenance: deriveProvenance(
+        (entry as { provenance?: unknown }).provenance,
+        citations,
+        citedText,
+      ),
       citations,
       confidence: oneOf((entry as { confidence?: unknown }).confidence, CONFIDENCE_LEVELS),
       uncertainty: asString((entry as { uncertainty?: unknown }).uncertainty, 500),
@@ -352,6 +417,11 @@ export async function analyzeCaseEvidence(
       hasConflictingDates(detected);
     events.push({
       description,
+      // Events carry provenance too. A timeline entry cited to a passage that
+      // only reports an allegation is the party's account of what happened, not
+      // a recorded fact - storing it as `documented` would let a pleading write
+      // the timeline.
+      provenance: deriveProvenance("documented", citations, citedText),
       dateText,
       dateIso,
       datePrecision:

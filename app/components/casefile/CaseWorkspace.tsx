@@ -192,8 +192,15 @@ const EVIDENCE_CATEGORIES = [
  * The client aborts an action after 60s by default. Analysis runs a model over
  * every extracted passage and routinely takes longer, so it is given its own
  * budget instead of failing mid-flight.
+ *
+ * The three limits have to be ordered: the server's own model budget is 290s,
+ * this client timeout is 295s, and the hosting platform stops a function at
+ * 300s. The client must outlast the server, or the browser gives up first and
+ * the server's stated reason - "ran out of its 290s budget" - is never seen.
+ * Both must stay under the platform limit, or the function is killed mid-flight
+ * and the failure is an opaque network error with nothing recorded.
  */
-export const ANALYSIS_TIMEOUT_MS = 5 * 60_000;
+export const ANALYSIS_TIMEOUT_MS = 295_000;
 
 function humanBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -365,7 +372,7 @@ function InvestigationBrief({
               {item.anchor ? (
                 <button
                   type="button"
-                  className="rounded underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="inline-flex min-w-6 items-center justify-center rounded -mx-1 px-1 py-0.5 -my-0.5 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   onClick={() => onJump(item.anchor!)}
                 >
                   {item.value}
@@ -804,7 +811,7 @@ function CrossDocumentPanel({
                     {gap.relatedEvidenceIds.length > 0 ? (
                       <button
                         type="button"
-                        className="mt-1 text-xs underline"
+                        className="mt-1 py-1 text-xs underline"
                         onClick={() => onSelectEvidence(gap.relatedEvidenceIds[0]!, null)}
                       >
                         Go to the related document
@@ -840,7 +847,7 @@ function CrossDocumentPanel({
                     {relationship.sourcePassageId ? (
                       <button
                         type="button"
-                        className="underline"
+                        className="py-1 underline"
                         onClick={() =>
                           onSelectEvidence(
                             relationship.fromType === "passage"
@@ -858,7 +865,7 @@ function CrossDocumentPanel({
                       {relationship.reviewStatus !== "confirmed" ? (
                         <button
                           type="button"
-                          className="underline"
+                          className="py-1 underline"
                           onClick={() => onReviewRelationship(relationship.id, "confirmed")}
                         >
                           Confirm
@@ -867,7 +874,7 @@ function CrossDocumentPanel({
                       {relationship.reviewStatus !== "rejected" ? (
                         <button
                           type="button"
-                          className="underline"
+                          className="py-1 underline"
                           onClick={() => onReviewRelationship(relationship.id, "rejected")}
                         >
                           Dismiss
@@ -905,7 +912,7 @@ function ComparisonSide({
             <button
               key={`${citation.evidenceId}-${citation.passageId ?? index}`}
               type="button"
-              className="block w-full text-start text-xs text-muted-foreground underline decoration-dotted"
+              className="block w-full py-1 text-start text-xs text-muted-foreground underline decoration-dotted"
               onClick={() => onSelectEvidence(citation.evidenceId, citation.passageId)}
             >
               {citation.ref ?? "source"}
@@ -1075,7 +1082,7 @@ function ReportPanel({ caseId }: { caseId: string }) {
   const [message, setMessage] = useState<string | null>(null);
   const exportReport = useActionMutation("export-report");
 
-  const download = async (format: "markdown" | "html" | "docx") => {
+  const download = async (format: "markdown" | "html" | "docx" | "pdf" | "json" | "csv") => {
     setBusy(format);
     setMessage(null);
     try {
@@ -1144,10 +1151,205 @@ function ReportPanel({ caseId }: { caseId: string }) {
           >
             {busy === "docx" ? "Exporting…" : "Export Word"}
           </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void download("pdf")}
+            disabled={busy !== null}
+          >
+            {busy === "pdf" ? "Exporting…" : "Export PDF"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void download("json")}
+            disabled={busy !== null}
+          >
+            {busy === "json" ? "Exporting…" : "Export JSON"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void download("csv")}
+            disabled={busy !== null}
+          >
+            {busy === "csv" ? "Exporting…" : "Export CSV"}
+          </Button>
         </div>
         {message ? <p className="text-xs text-muted-foreground">{message}</p> : null}
       </CardContent>
     </Card>
+  );
+}
+
+interface EntitySource {
+  evidenceId: string;
+  filename: string;
+  passageId: string;
+  quote: string;
+}
+
+interface EntityGroup {
+  key: string;
+  label: string;
+  mentions: number;
+  sources: EntitySource[];
+}
+
+interface EntityView {
+  counts: {
+    documents: number;
+    passages: number;
+    parties: number;
+    references: number;
+    amounts: number;
+    dates: number;
+  };
+  parties: EntityGroup[];
+  references: EntityGroup[];
+  amounts: EntityGroup[];
+  dates: EntityGroup[];
+}
+
+/**
+ * The entities a case's documents introduce: the parties named, the references
+ * cited, the amounts stated, and the dates recorded. Every entity resolves to
+ * the passages that mention it, so a reader can check the claim rather than
+ * trust a name.
+ */
+export function EntitiesPanel({
+  caseId,
+  onSelectEvidence,
+}: {
+  caseId: string;
+  onSelectEvidence: (evidenceId: string, passageId: string) => void;
+}) {
+  const entities = useActionQuery<EntityView>("list-entities", { caseId });
+
+  const groups: Array<[string, EntityGroup[]]> = [
+    ["Parties", entities.data?.parties ?? []],
+    ["References", entities.data?.references ?? []],
+    ["Amounts", entities.data?.amounts ?? []],
+    ["Dates", entities.data?.dates ?? []],
+  ];
+
+  return (
+    <section className="mb-6 scroll-mt-4" data-testid="entities-panel" id="entities" tabIndex={-1}>
+      <h2 className="text-lg font-medium">Entities</h2>
+      <p className="text-sm text-muted-foreground">
+        Parties, references, amounts, and dates found across the documents. Two mentions are the
+        same entity only when they share an identifier — similar-looking names are never merged.
+      </p>
+
+      {entities.isLoading ? (
+        <p className="mt-3 text-sm text-muted-foreground">Reading the entities…</p>
+      ) : entities.error ? (
+        <p className="mt-3 text-sm text-destructive">
+          {entities.error instanceof Error ? entities.error.message : String(entities.error)}
+        </p>
+      ) : (
+        <div className="mt-3 space-y-4">
+          {groups.map(([heading, list]) =>
+            list.length === 0 ? null : (
+              <div key={heading}>
+                <h3 className="mb-2 text-sm font-medium">{heading}</h3>
+                <div className="space-y-2">
+                  {list.map((entity) => (
+                    <Card key={`${heading}:${entity.key}`}>
+                      <CardContent className="pt-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-sm font-medium">{entity.label}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {entity.mentions} mention{entity.mentions === 1 ? "" : "s"}
+                          </span>
+                        </div>
+                        <ul className="mt-2 space-y-1">
+                          {entity.sources.map((source) => (
+                            <li key={`${source.passageId}:${source.quote}`}>
+                              <button
+                                type="button"
+                                className="text-left text-xs text-muted-foreground hover:text-foreground"
+                                onClick={() => onSelectEvidence(source.evidenceId, source.passageId)}
+                              >
+                                <span className="font-medium">{source.filename}</span> — {source.quote}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            ),
+          )}
+          {groups.every(([, list]) => list.length === 0) ? (
+            <p className="text-sm text-muted-foreground">
+              No entities yet. Read the documents first.
+            </p>
+          ) : null}
+        </div>
+      )}
+    </section>
+  );
+}
+
+interface ActivityEntry {
+  id: string;
+  action: string;
+  actor: string | null;
+  source: string;
+  targetType: string | null;
+  targetId: string | null;
+  summary: string | null;
+  createdAt: string;
+}
+
+/**
+ * The case's activity history: every write that touched it, newest first, and
+ * whether it came from a person or the agent. The audit trail was recorded all
+ * along; this is where it becomes visible.
+ */
+export function ActivityPanel({ caseId }: { caseId: string }) {
+  const activity = useActionQuery<{ count: number; entries: ActivityEntry[] }>("list-activity", {
+    caseId,
+    limit: 50,
+  });
+
+  return (
+    <section className="mb-6 scroll-mt-4" data-testid="activity-panel" id="activity" tabIndex={-1}>
+      <h2 className="text-lg font-medium">Activity</h2>
+      <p className="text-sm text-muted-foreground">
+        Every change to this case, newest first. Agent writes are recorded the same way as your own.
+      </p>
+
+      {activity.isLoading ? (
+        <p className="mt-3 text-sm text-muted-foreground">Reading the history…</p>
+      ) : activity.error ? (
+        <p className="mt-3 text-sm text-destructive">
+          {activity.error instanceof Error ? activity.error.message : String(activity.error)}
+        </p>
+      ) : (activity.data?.entries.length ?? 0) === 0 ? (
+        <p className="mt-3 text-sm text-muted-foreground">Nothing has happened on this case yet.</p>
+      ) : (
+        <ol className="mt-3 space-y-2">
+          {activity.data!.entries.map((entry) => (
+            <li key={entry.id} className="rounded-md border border-border px-3 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-sm">
+                  <span className="font-medium">{entry.action}</span>
+                  {entry.summary ? ` — ${entry.summary}` : ""}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {entry.source === "agent" ? "agent" : "you"} ·{" "}
+                  {new Date(entry.createdAt).toLocaleString()}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
   );
 }
 
@@ -1158,6 +1360,12 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [category, setCategory] = useState<EvidenceCategory>("receipt");
+  // Wall-clock start of the running analysis, and the elapsed seconds derived
+  // from it. Analysis runs a model for minutes, so the pending state has to
+  // visibly move; a button that reads the same at second 1 and second 120 is
+  // indistinguishable from a click that did nothing.
+  const [analysisStartedAt, setAnalysisStartedAt] = useState<number | null>(null);
+  const [analysisElapsed, setAnalysisElapsed] = useState(0);
 
   const detail = useActionQuery<CaseDetail>("get-case", { caseId });
   const status = useActionQuery<InvestigationStatus>("get-investigation-status", { caseId });
@@ -1194,6 +1402,20 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
     void timeline.refetch();
     void storedGraph.refetch();
   };
+
+  // Tick once a second while an analysis is in flight so the button can show how
+  // long it has been running. The interval is cleared the moment the run ends,
+  // so nothing keeps re-rendering afterwards.
+  useEffect(() => {
+    if (analysisStartedAt === null) {
+      setAnalysisElapsed(0);
+      return;
+    }
+    const update = () => setAnalysisElapsed(Math.floor((Date.now() - analysisStartedAt) / 1000));
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [analysisStartedAt]);
 
   const buildGraph = useActionMutation("build-case-graph", {
     onSuccess: (result: GraphResult) => {
@@ -1244,16 +1466,22 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
   const analyze = useActionMutation("analyze-evidence", {
     // Analysis runs a model over every extracted passage, which routinely
     // exceeds the client's 60s default. Without this the request is aborted
-    // while the server is still working, and the proposals are lost.
+    // while the server is still working, and the proposals are lost. The value
+    // sits below the hosting platform's 300s function limit, so a slow run
+    // ends with a stated error rather than a platform kill.
     timeoutMs: ANALYSIS_TIMEOUT_MS,
     onSuccess: (result: { claimsProposed: number; eventsProposed: number }) => {
+      setAnalysisStartedAt(null);
       setNotice(
         `Proposed ${result.claimsProposed} claim(s) and ${result.eventsProposed} event(s). ` +
           "Nothing is confirmed until you confirm it.",
       );
       invalidate();
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (err: Error) => {
+      setAnalysisStartedAt(null);
+      setError(err.message);
+    },
   });
 
   const updateFinding = useActionMutation("update-finding", {
@@ -1490,7 +1718,7 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
               ref={fileInput}
               type="file"
               multiple
-              accept=".pdf,.png,.jpg,.jpeg,.txt,.csv,.log,.md,.docx,.xlsx"
+              accept=".pdf,.png,.jpg,.jpeg,.txt,.csv,.log,.md,.docx,.xlsx,.eml"
               className="hidden"
               onChange={(event) => void onFilesChosen(event.target.files)}
             />
@@ -1536,13 +1764,20 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
             {extract.isPending ? "Reading…" : "Read the documents"}
           </Button>
           <Button
-            onClick={() => analyze.mutate({ caseId })}
+            onClick={() => {
+              setNotice(null);
+              setError(null);
+              setAnalysisStartedAt(Date.now());
+              analyze.mutate({ caseId });
+            }}
             disabled={analyze.isPending || investigation?.evidence.extracted === 0}
           >
             {analyze.isPending ? "Analysing…" : "Analyse the evidence"}
           </Button>
-          <span className="text-xs text-muted-foreground">
-            Analysis proposes; it never confirms.
+          <span className="text-xs text-muted-foreground" aria-live="polite">
+            {analyze.isPending
+              ? `Analysis is running on every extracted passage. Elapsed ${analysisElapsed}s — a long case can take a few minutes; leave this page open.`
+              : "Analysis proposes; it never confirms."}
           </span>
         </div>
       </section>
@@ -1562,6 +1797,14 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
       />
 
       <DomainPanel caseId={caseId} />
+
+      <EntitiesPanel
+        caseId={caseId}
+        onSelectEvidence={(evidenceId, passageId) => {
+          setSelectedEvidenceId(evidenceId);
+          setSelectedPassageId(passageId);
+        }}
+      />
 
       <ReadinessPanel caseId={caseId} />
 
@@ -1614,7 +1857,7 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
                       <ProvenanceBadge value={finding.provenance} />
                       <button
                         type="button"
-                        className="text-start underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="py-1 text-start underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         onClick={() => jumpTo(`finding-${finding.id}`)}
                       >
                         {finding.statement}
@@ -1759,6 +2002,8 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
           )}
         </div>
       </section>
+
+      <ActivityPanel caseId={caseId} />
 
       <Label className="mt-8 block text-xs text-muted-foreground">
         Case id: {data.case.id}

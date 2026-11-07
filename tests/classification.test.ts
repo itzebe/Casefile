@@ -74,6 +74,16 @@ describe("document classification", () => {
     expect(result.documentType).toBe("email");
   });
 
+  it("recognises an email structurally from its MIME type, whatever the body says", () => {
+    // The body names no email vocabulary at all; only the MIME type marks it.
+    const result = classify(
+      "Subject: Order ORD-55231\n\nYour parcel left the depot this morning.",
+      "message.eml",
+      "message/rfc822",
+    );
+    expect(result.documentType).toBe("email");
+  });
+
   it("recognises a medical report", () => {
     const result = classify(
       "MEDICAL REPORT\nPatient: A. Smith\nThe examination findings are consistent with a soft tissue injury. Diagnosis: sprain. Treatment plan: physiotherapy.",
