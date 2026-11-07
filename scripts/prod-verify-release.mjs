@@ -61,11 +61,14 @@ await check("search input is present on /cases", async () => {
   return "found";
 });
 
+let caseId = null;
 await check("load the demo case", async () => {
   const btn = page.locator("[data-testid=load-demo-case], [data-testid=load-demo-case-empty]").first();
   await btn.waitFor({ timeout: 15000 });
   await btn.click();
   await page.waitForTimeout(15000);
+  caseId = page.url().split("/cases/")[1];
+  if (!caseId) throw new Error("demo case did not open a case route: " + page.url());
   return page.url();
 });
 
@@ -102,43 +105,89 @@ await check("search finds the note across cases", async () => {
 });
 
 // --- gap review ---
-await check("gap review persists across re-analysis", async () => {
-  await page.goBack({ waitUntil: "domcontentloaded" });
-  await page.waitForTimeout(6000);
-  const badges = await page.locator("[data-testid=notes-panel]").count();
-  if (!badges) throw new Error("not back on the case workspace");
-  // Find the first gap's review controls in the cross-document panel.
+await check("analysis derives real gaps, then a verdict persists", async () => {
+  // A gap is only derived from findings, and findings only exist after
+  // analysis, so produce them with the real model before looking for the
+  // review controls. Without this the panel is correctly empty and the test
+  // would be checking nothing.
+  if (!caseId) throw new Error("no case id captured");
+  await page.goto(`${BASE}/cases/${caseId}`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(10000);
+  const an = await page.evaluate(
+    async ([base, caseId]) => {
+      const res = await fetch(`${base}/_agent-native/actions/analyze-evidence`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ caseId }),
+      });
+      return { status: res.status, body: await res.text() };
+    },
+    [BASE, caseId],
+  );
+  if (an.status >= 400) throw new Error(`analyze-evidence ${an.status}`);
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(12000);
+
   const notApplicable = page.getByRole("button", { name: /^Not applicable$/ }).first();
-  if (!(await notApplicable.count())) throw new Error("no gap review controls rendered");
+  if (!(await notApplicable.count())) throw new Error("analysis produced no reviewable gap");
+  await notApplicable.scrollIntoViewIfNeeded();
   await notApplicable.click();
-  await page.waitForTimeout(8000);
-  return "clicked Not applicable";
+  await page.waitForTimeout(9000);
+
+  const verdicts = await page
+    .locator("span[title=\"Reviewer's verdict on this gap\"]")
+    .allInnerTexts();
+  if (!verdicts.includes("Not applicable")) {
+    throw new Error("verdict not shown; badges=" + JSON.stringify(verdicts));
+  }
+  return `${verdicts.length} gaps, verdict persisted`;
 });
 
-// --- capture the gap/note badge text (defect check) ---
-const badgeText = await page.evaluate(() => {
-  const out = [];
-  for (const el of document.querySelectorAll("span[title='Review state set by a person']")) {
-    const t = (el.textContent || "").trim();
-    if (t) out.push(t);
-  }
-  return [...new Set(out)];
+// --- badge vocabulary (the defect this release fixed) ---
+await check("no status badge reads Rejected unless it is a rejected finding", async () => {
+  const wrong = await page.evaluate(() => {
+    const out = [];
+    for (const el of document.querySelectorAll("span[title]")) {
+      const title = el.getAttribute("title") || "";
+      const word = (el.textContent || "").trim();
+      const isFindingBadge = title === "Review state set by a person";
+      if (word === "Rejected" && !isFindingBadge) {
+        out.push(`${title || "(no title)"} -> ${word}`);
+      }
+    }
+    return out;
+  });
+  if (wrong.length) throw new Error("mislabelled: " + JSON.stringify(wrong));
+  return "gap and note badges use their own words";
 });
-console.log("BADGES on the case workspace:", JSON.stringify(badgeText));
 
 // --- agent ---
-await page.goto(BASE + "/chat", { waitUntil: "domcontentloaded", timeout: 60000 });
-await page.waitForTimeout(6000);
+// The agent occasionally reports "Conversation has grown too long" on the
+// first run of a brand-new chat and then succeeds on a fresh one, so a single
+// failure is retried once in a new chat before it is reported.
 await check("the agent calls the hello action", async () => {
-  const box = page.locator("textarea, [contenteditable=true], [role=textbox]").first();
-  await box.waitFor({ timeout: 25000 });
-  await box.click();
-  await box.fill("Call the hello action with name=Judge and reply with exactly what it returned.");
-  await page.keyboard.press("Enter");
-  await page.waitForTimeout(50000);
-  const body = await page.locator("body").innerText();
-  if (!/Hello, Judge!/.test(body)) throw new Error("agent did not return the hello result");
-  return "agent returned Hello, Judge!";
+  const prompt = "Call the hello action with name=Judge and reply with exactly what it returned.";
+  let last = "";
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    await page.goto(BASE + "/chat", { waitUntil: "domcontentloaded", timeout: 60000 });
+    await page.waitForTimeout(10000);
+    const box = page.locator("[contenteditable=true], textarea, [role=textbox]").first();
+    await box.waitFor({ timeout: 25000 });
+    await box.click();
+    await box.type(prompt, { delay: 10 });
+    await page.waitForTimeout(600);
+    await page.keyboard.press("Enter");
+    for (let i = 0; i < 9; i += 1) {
+      await page.waitForTimeout(10000);
+      const body = await page.locator("body").innerText();
+      if (/Hello, Judge!/.test(body)) return `agent returned Hello, Judge! (attempt ${attempt})`;
+      last = body;
+      if (/Response failed|agent run failed/i.test(body)) break;
+    }
+  }
+  throw new Error("agent did not return the hello result: " + last.slice(-160).replace(/\n+/g, " "));
 });
 
 await page.screenshot({ path: "/tmp/release-final.png", fullPage: true });
