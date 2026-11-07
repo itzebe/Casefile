@@ -11,6 +11,12 @@ export default defineConfig({
   },
   test: {
     env: { DATABASE_URL: "pglite:memory" },
+    // The first test in a fresh worker to touch the database pays for installing
+    // the schema snapshot (240 migrations). On a cold CI runner that alone has
+    // exceeded vitest's 5000ms default and failed a passing test, so give the
+    // suite headroom. Still bounded well below a genuinely hung test.
+    testTimeout: 20_000,
+    hookTimeout: 20_000,
     exclude: [
       "**/node_modules/**",
       "**/.git/**",
