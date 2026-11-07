@@ -1,0 +1,3 @@
+date,description,reference,amount,currency
+2024-03-01,Card payment,RRF-90001,-249.99,GBP
+2024-03-14,No refund received,RRF-90001,0.00,GBP

@@ -64,6 +64,37 @@ export interface RunModelOptions {
   signal?: AbortSignal | undefined;
 }
 
+/**
+ * Chooses the model an investigation run should use.
+ *
+ * The order is deliberate and each step exists because of an observed failure:
+ *
+ *  1. The app's configured model (`AGENT_MODEL`) - an explicit operator choice
+ *     wins over everything.
+ *  2. The chat's stored default for the resolved engine - so analysis follows
+ *     the model the user already picked in Settings.
+ *  3. The engine's stock default - last resort, and the reason this order is
+ *     tested: on Ollama the stock default is `llama3.1`, which is frequently
+ *     not installed, so falling here while chat uses another model makes
+ *     investigation fail with "model not found" even though chat works.
+ *
+ * "auto" is not a model name; treating it as one would ask the engine for a
+ * model called "auto". Kept separate from `runModel` so the order can be
+ * verified without a live provider.
+ */
+export function selectInvestigationModel(input: {
+  configuredModel?: string | undefined;
+  storedModel?: string | undefined;
+  engineDefaultModel: string;
+}): string {
+  const configured =
+    input.configuredModel && input.configuredModel !== "auto" ? input.configuredModel : undefined;
+  // An empty string is an absent value, not a model named ""; `??` alone would
+  // pass it through and hand the engine a nameless model.
+  const stored = input.storedModel ? input.storedModel : undefined;
+  return configured ?? stored ?? input.engineDefaultModel;
+}
+
 /** Streams one completion and returns the concatenated text. */
 export async function runModel(options: RunModelOptions): Promise<string> {
   let engine;
@@ -82,11 +113,11 @@ export async function runModel(options: RunModelOptions): Promise<string> {
   // engine's built-in default (`llama3.1` for Ollama) is used even when the app
   // and the chat are both on a different, installed model, so investigation
   // fails with "model not found" while chat works.
-  const configuredModel = getAppConfig().agent.model;
-  const model =
-    (configuredModel && configuredModel !== "auto" ? configuredModel : undefined) ??
-    (await getStoredModelForEngine(engine, { appId: APP_ID })) ??
-    engine.defaultModel;
+  const model = selectInvestigationModel({
+    configuredModel: getAppConfig().agent.model,
+    storedModel: await getStoredModelForEngine(engine, { appId: APP_ID }),
+    engineDefaultModel: engine.defaultModel,
+  });
 
   const budgetMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const controller = new AbortController();

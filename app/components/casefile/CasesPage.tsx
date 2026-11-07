@@ -88,13 +88,17 @@ export function CasesPage() {
   const [error, setError] = useState<string | null>(null);
 
   const query = useActionQuery<{ cases: CaseSummary[] }>("list-cases", {});
-  const create = useActionMutation("create-case", {
-    onSuccess: () => {
+  const create = useActionMutation<{ id: string }>("create-case", {
+    onSuccess: (result) => {
       setShowCreate(false);
       setTitle("");
       setDescription("");
       setAmount("");
       setError(null);
+      // Open the case the user just created. Without this the form simply
+      // closes and the new case is invisible until a manual reload, which reads
+      // as a control that did nothing.
+      navigate(casePath(result.id));
     },
     onError: (err: Error) => setError(err.message),
   });

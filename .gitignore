@@ -46,3 +46,9 @@ data/*.lock
 .openhands/
 .vercel
 .env*
+
+# Playwright artifacts
+test-results/
+playwright-report/
+.playwright/
+blob-report/

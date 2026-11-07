@@ -1,0 +1,7 @@
+Northwind Traders Ltd
+Refund confirmation
+Reference: RRF-90001
+Date: 2024-03-12
+
+We confirm that a refund of GBP 249.99 was issued to the customer on 2024-03-10
+against reference RRF-90001. The refund was applied to the original card.

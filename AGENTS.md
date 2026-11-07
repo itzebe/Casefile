@@ -204,14 +204,33 @@ rejected even if it looks better in isolation.
 - **Test the failure mode.** For each new invariant, confirm it can fail —
   mutate the guard and watch the test go red. A check that cannot fail is a
   defect.
-- **Run the checks that exist.** `pnpm typecheck`, `pnpm test`
-  (vitest), and `pnpm agent-native:doctor`. Fix findings before declaring done.
+- **Run the checks that exist.** `pnpm typecheck`, `pnpm test` (vitest,
+  PGlite), `pnpm test:pg` (a real PostgreSQL server), `pnpm test:e2e`
+  (Playwright, real browser), `pnpm build`, and `pnpm agent-native:doctor`.
+  Fix findings before declaring done. Each layer proves something the others
+  cannot, so a green unit run is not a green project.
 - **Record the evidence.** When a run or verification completes, capture the
   concrete artifact — the response body, the run status, the screenshot — so
   the result is inspectable after the fact.
 - **No success without evidence.** If something is blocked, report it as
   blocked with the exact error and the attempted fix, rather than reporting
   success.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs four independent jobs on every push and pull
+request. All four must pass:
+
+- **unit** — `pnpm typecheck` and `pnpm test` against PGlite.
+- **postgres** — `pnpm test:pg` against a real `postgres:16` service. Set
+  `CASEFILE_TEST_PG_URL` locally to run the same suite; when it is unset the
+  suite is skipped rather than failed, so a missing server is never mistaken for
+  a passing one.
+- **browser** — `pnpm test:e2e`, the Playwright journeys, with `AUTH_DISABLED=1`
+  set only for that ephemeral job. The browser resolves a system Chromium
+  (`/usr/bin/chromium`) or, in CI, the one `playwright install chromium` places
+  in Playwright's own cache; override with `PLAYWRIGHT_CHROMIUM_EXECUTABLE`.
+- **build** — `pnpm build`, so the app still compiles for production.
 
 ## Skills
 

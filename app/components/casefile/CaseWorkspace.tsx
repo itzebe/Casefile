@@ -1182,6 +1182,177 @@ function ReportPanel({ caseId }: { caseId: string }) {
   );
 }
 
+interface EntitySource {
+  evidenceId: string;
+  filename: string;
+  passageId: string;
+  quote: string;
+}
+
+interface EntityGroup {
+  key: string;
+  label: string;
+  mentions: number;
+  sources: EntitySource[];
+}
+
+interface EntityView {
+  counts: {
+    documents: number;
+    passages: number;
+    parties: number;
+    references: number;
+    amounts: number;
+    dates: number;
+  };
+  parties: EntityGroup[];
+  references: EntityGroup[];
+  amounts: EntityGroup[];
+  dates: EntityGroup[];
+}
+
+/**
+ * The entities a case's documents introduce: the parties named, the references
+ * cited, the amounts stated, and the dates recorded. Every entity resolves to
+ * the passages that mention it, so a reader can check the claim rather than
+ * trust a name.
+ */
+export function EntitiesPanel({
+  caseId,
+  onSelectEvidence,
+}: {
+  caseId: string;
+  onSelectEvidence: (evidenceId: string, passageId: string) => void;
+}) {
+  const entities = useActionQuery<EntityView>("list-entities", { caseId });
+
+  const groups: Array<[string, EntityGroup[]]> = [
+    ["Parties", entities.data?.parties ?? []],
+    ["References", entities.data?.references ?? []],
+    ["Amounts", entities.data?.amounts ?? []],
+    ["Dates", entities.data?.dates ?? []],
+  ];
+
+  return (
+    <section className="mb-6 scroll-mt-4" data-testid="entities-panel" id="entities" tabIndex={-1}>
+      <h2 className="text-lg font-medium">Entities</h2>
+      <p className="text-sm text-muted-foreground">
+        Parties, references, amounts, and dates found across the documents. Two mentions are the
+        same entity only when they share an identifier — similar-looking names are never merged.
+      </p>
+
+      {entities.isLoading ? (
+        <p className="mt-3 text-sm text-muted-foreground">Reading the entities…</p>
+      ) : entities.error ? (
+        <p className="mt-3 text-sm text-destructive">
+          {entities.error instanceof Error ? entities.error.message : String(entities.error)}
+        </p>
+      ) : (
+        <div className="mt-3 space-y-4">
+          {groups.map(([heading, list]) =>
+            list.length === 0 ? null : (
+              <div key={heading}>
+                <h3 className="mb-2 text-sm font-medium">{heading}</h3>
+                <div className="space-y-2">
+                  {list.map((entity) => (
+                    <Card key={`${heading}:${entity.key}`}>
+                      <CardContent className="pt-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-sm font-medium">{entity.label}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {entity.mentions} mention{entity.mentions === 1 ? "" : "s"}
+                          </span>
+                        </div>
+                        <ul className="mt-2 space-y-1">
+                          {entity.sources.map((source) => (
+                            <li key={`${source.passageId}:${source.quote}`}>
+                              <button
+                                type="button"
+                                className="text-left text-xs text-muted-foreground hover:text-foreground"
+                                onClick={() => onSelectEvidence(source.evidenceId, source.passageId)}
+                              >
+                                <span className="font-medium">{source.filename}</span> — {source.quote}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            ),
+          )}
+          {groups.every(([, list]) => list.length === 0) ? (
+            <p className="text-sm text-muted-foreground">
+              No entities yet. Read the documents first.
+            </p>
+          ) : null}
+        </div>
+      )}
+    </section>
+  );
+}
+
+interface ActivityEntry {
+  id: string;
+  action: string;
+  actor: string | null;
+  source: string;
+  targetType: string | null;
+  targetId: string | null;
+  summary: string | null;
+  createdAt: string;
+}
+
+/**
+ * The case's activity history: every write that touched it, newest first, and
+ * whether it came from a person or the agent. The audit trail was recorded all
+ * along; this is where it becomes visible.
+ */
+export function ActivityPanel({ caseId }: { caseId: string }) {
+  const activity = useActionQuery<{ count: number; entries: ActivityEntry[] }>("list-activity", {
+    caseId,
+    limit: 50,
+  });
+
+  return (
+    <section className="mb-6 scroll-mt-4" data-testid="activity-panel" id="activity" tabIndex={-1}>
+      <h2 className="text-lg font-medium">Activity</h2>
+      <p className="text-sm text-muted-foreground">
+        Every change to this case, newest first. Agent writes are recorded the same way as your own.
+      </p>
+
+      {activity.isLoading ? (
+        <p className="mt-3 text-sm text-muted-foreground">Reading the history…</p>
+      ) : activity.error ? (
+        <p className="mt-3 text-sm text-destructive">
+          {activity.error instanceof Error ? activity.error.message : String(activity.error)}
+        </p>
+      ) : (activity.data?.entries.length ?? 0) === 0 ? (
+        <p className="mt-3 text-sm text-muted-foreground">Nothing has happened on this case yet.</p>
+      ) : (
+        <ol className="mt-3 space-y-2">
+          {activity.data!.entries.map((entry) => (
+            <li key={entry.id} className="rounded-md border border-border px-3 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-sm">
+                  <span className="font-medium">{entry.action}</span>
+                  {entry.summary ? ` — ${entry.summary}` : ""}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {entry.source === "agent" ? "agent" : "you"} ·{" "}
+                  {new Date(entry.createdAt).toLocaleString()}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
+}
+
 export function CaseWorkspace({ caseId }: { caseId: string }) {
   const navigate = useNavigate();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -1627,6 +1798,14 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
 
       <DomainPanel caseId={caseId} />
 
+      <EntitiesPanel
+        caseId={caseId}
+        onSelectEvidence={(evidenceId, passageId) => {
+          setSelectedEvidenceId(evidenceId);
+          setSelectedPassageId(passageId);
+        }}
+      />
+
       <ReadinessPanel caseId={caseId} />
 
       <ReportPanel caseId={caseId} />
@@ -1823,6 +2002,8 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
           )}
         </div>
       </section>
+
+      <ActivityPanel caseId={caseId} />
 
       <Label className="mt-8 block text-xs text-muted-foreground">
         Case id: {data.case.id}
