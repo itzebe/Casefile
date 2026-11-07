@@ -105,7 +105,14 @@ rejected even if it looks better in isolation.
   only. Read `.agents/skills/secrets/SKILL.md` before handling any credential.
 - **Auth is on by default.** `AUTH_DISABLED=true` is for local dev and preview
   only and must never be set in a production deploy. Standalone production
-  needs a stable `BETTER_AUTH_SECRET`.
+  needs a stable `BETTER_AUTH_SECRET`. This is enforced, not just documented:
+  the auth plugin's boot guard (`server/casefile/auth-guard.ts`,
+  `assertAuthNotDisabledInDeployment`) **refuses to start** when `AUTH_DISABLED`
+  is set and the process looks like a deployment (any hosted-platform marker, or
+  `NODE_ENV=production`), because every request would otherwise resolve to one
+  shared identity. The only escape hatch is an explicit
+  `CASEFILE_ALLOW_AUTH_DISABLED=true`, for a private demo. `tests/auth-guard.test.ts`
+  pins both the refusal and the opt-in.
 - **Least privilege for integrations.** Reuse the workspace's scoped connection
   resolver. Never hardcode a webhook URL, provider endpoint, or credential.
 - **Evidence may be sensitive.** Treat stored evidence as private to the case

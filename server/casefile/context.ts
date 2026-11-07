@@ -1,6 +1,7 @@
 import type { ActionRunContext } from "@agent-native/core/action";
 
 import { requireUserEmail } from "./access.js";
+import { isAuthDisabled } from "./auth-guard.js";
 
 /**
  * Shared request-identity helpers for CASEFILE actions.
@@ -17,27 +18,23 @@ export interface CasefileContext {
   runId: string | null;
 }
 
-/** Mirrors the framework's own parsing of `AUTH_DISABLED` so the two agree. */
-function authDisabled(): boolean {
-  // A local-dev switch, never a credential. No secret is read or transmitted.
-  const value = process.env.AUTH_DISABLED?.trim().toLowerCase(); // guard:allow-env-credential — local-dev auth switch, not a credential
-  return value === "1" || value === "true";
-}
-
 /**
  * Resolves the caller, or throws. `AUTH_DISABLED` deliberately still resolves a
  * single shared identity for local demos, matching the framework's behaviour,
  * but the value is reported in the actor field so an audit trail shows it.
+ *
+ * The shared identity is only reachable in local development: the auth plugin's
+ * boot guard (`assertAuthNotDisabledInDeployment`) refuses to start a deployment
+ * with `AUTH_DISABLED` set, so a real deploy resolves the signed-in session and
+ * never reaches this fallback.
  */
 export function casefileContext(ctx: ActionRunContext | undefined): CasefileContext {
   let userEmail: string | undefined = ctx?.userEmail;
-  if (!userEmail && authDisabled()) {
-    // Local-demo identity only: reachable solely when AUTH_DISABLED is set,
-    // which the framework refuses on a public bind. A real deploy resolves the
-    // signed-in session and never reaches this fallback.
+  if (!userEmail && isAuthDisabled()) {
+    // Local-demo identity only.
     userEmail =
       process.env.CASEFILE_DEV_USER_EMAIL?.trim() || // guard:allow-env-credential — local-dev identity override, not a credential
-      "local@localhost"; // guard:allow-localhost-fallback — only under AUTH_DISABLED, which a public bind refuses
+      "local@localhost"; // guard:allow-localhost-fallback — only under AUTH_DISABLED, which the boot guard refuses on a deployment
   }
   const resolved = requireUserEmail(userEmail);
   return {

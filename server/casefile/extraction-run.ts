@@ -83,6 +83,9 @@ export async function extractCaseEvidence(input: {
       continue;
     }
 
+    // Mark the file as being processed so the UI can show progress. This runs
+    // outside the replacement transaction on purpose: it is only a hint, and a
+    // status write must never be the thing that serializes extraction.
     await db
       .update(schema.evidence)
       .set({ extractionStatus: "processing", extractionError: null })
@@ -116,68 +119,138 @@ export async function extractCaseEvidence(input: {
       };
     }
 
-    // Replace rather than append, so re-extraction cannot double the record.
-    await db
-      .delete(schema.evidencePassages)
-      .where(eq(schema.evidencePassages.evidenceId, item.id));
+    const extractedText = outcome.passages.map((passage) => passage.text).join("\n");
 
-    if (outcome.status === "complete" && outcome.passages.length > 0) {
-      await db.insert(schema.evidencePassages).values(
-        outcome.passages.map((passage, index) => ({
-          id: newPassageId(),
-          evidenceId: item.id,
-          caseId: input.caseId,
-          ownerEmail: input.ownerEmail,
-          ordinal: index,
-          locatorType: passage.locatorType,
-          locatorValue: passage.locatorValue,
-          ref: passage.ref,
-          text: passage.text,
-        })),
-      );
+    // The replacement is the part that must be all-or-nothing: the delete of the
+    // stored passages and the insert of the new set commit together or not at
+    // all, and the evidence row is locked for the duration (`SELECT … FOR UPDATE`)
+    // so two extractions of the same file cannot interleave their writes and
+    // leave a doubled or truncated passage set. Extraction itself — the
+    // expensive, slow part — runs above, outside the transaction, so a slow file
+    // never holds a row lock and concurrent extraction of *different* files never
+    // blocks. This lock is a database lock, not a process-local one, so it holds
+    // across serverless instances.
+    let applied: {
+      classification: ReturnType<typeof classifyDocument> | undefined;
+      passageCount: number;
+    } | null = null;
+    try {
+      applied = await db.transaction(async (tx) => {
+        const [locked] = await tx
+          .select()
+          .from(schema.evidence)
+          .where(
+            and(
+              eq(schema.evidence.id, item.id),
+              eq(schema.evidence.caseId, input.caseId),
+              eq(schema.evidence.ownerEmail, input.ownerEmail),
+            ),
+          )
+          .for("update");
+        // The row was deleted between the bulk read and here; nothing to update.
+        if (!locked) return null;
+
+        // Only a definitive result may replace the stored passages. A failed
+        // extraction keeps them: an inability to re-read a file must not destroy
+        // text a previous successful run extracted. "unsupported" is a real
+        // determination that the file has no text, so it clears them.
+        let passageCount: number;
+        if (outcome.status === "complete" || outcome.status === "unsupported") {
+          await tx
+            .delete(schema.evidencePassages)
+            .where(eq(schema.evidencePassages.evidenceId, item.id));
+          if (outcome.status === "complete" && outcome.passages.length > 0) {
+            await tx.insert(schema.evidencePassages).values(
+              outcome.passages.map((passage, index) => ({
+                id: newPassageId(),
+                evidenceId: item.id,
+                caseId: input.caseId,
+                ownerEmail: input.ownerEmail,
+                ordinal: index,
+                locatorType: passage.locatorType,
+                locatorValue: passage.locatorValue,
+                ref: passage.ref,
+                text: passage.text,
+              })),
+            );
+          }
+          passageCount = outcome.status === "complete" ? outcome.passages.length : 0;
+        } else {
+          // Failed: the stored set survived, so report its real size rather than 0.
+          const surviving = await tx
+            .select({ id: schema.evidencePassages.id })
+            .from(schema.evidencePassages)
+            .where(eq(schema.evidencePassages.evidenceId, item.id));
+          passageCount = surviving.length;
+        }
+
+        // Classify only from a definitive result. A human correction is never
+        // overwritten: once someone has set the type, the classifier stays out of
+        // the way. A failed extraction banks nothing new, so it keeps the type the
+        // file already had rather than reclassifying it from empty text. An
+        // unsupported file is classified from its filename alone, so it still gets
+        // a best-effort type rather than none. The correction state is read from
+        // the locked row, not the earlier snapshot, so a correction made while
+        // extraction was running is respected.
+        const keepExistingType =
+          Boolean(locked.classificationCorrectedBy) || outcome.status === "failed";
+        const classification = keepExistingType
+          ? undefined
+          : classifyDocument({
+              filename: locked.filename,
+              mimeType: locked.mimeType,
+              text: extractedText,
+            });
+
+        await tx
+          .update(schema.evidence)
+          .set({
+            extractionStatus: outcome.status,
+            extractionError: outcome.limitation ?? outcome.error ?? null,
+            extractedAt: new Date().toISOString(),
+            pageCount: outcome.pageCount ?? locked.pageCount ?? null,
+            ...(classification
+              ? {
+                  documentType: classification.documentType,
+                  classificationConfidence: classification.confidence,
+                  classificationRationale: JSON.stringify(classification.rationale),
+                }
+              : {}),
+          })
+          .where(eq(schema.evidence.id, item.id));
+
+        return { classification, passageCount };
+      });
+    } catch (error) {
+      // The replacement transaction rolled back whole: the previous passage set
+      // and status are intact. Report the failure in this run's result (so the
+      // caller sees it) without overwriting the stored row with a "failed" status
+      // that a transient write error does not justify.
+      results.push({
+        evidenceId: item.id,
+        filename: item.filename,
+        status: "failed",
+        passageCount: 0,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      continue;
     }
 
-    // Classify from the extracted text. A human correction is never
-    // overwritten: once someone has set the type, the classifier stays out of
-    // the way. An unsupported file is classified from its filename alone, so it
-    // still gets a best-effort type rather than none.
-    const extractedText = outcome.passages.map((passage) => passage.text).join("\n");
-    const classification = classifyDocument({
-      filename: item.filename,
-      mimeType: item.mimeType,
-      text: extractedText,
-    });
-    const keepHumanType = Boolean(item.classificationCorrectedBy);
-
-    await db
-      .update(schema.evidence)
-      .set({
-        extractionStatus: outcome.status,
-        extractionError: outcome.limitation ?? outcome.error ?? null,
-        extractedAt: new Date().toISOString(),
-        pageCount: outcome.pageCount ?? item.pageCount ?? null,
-        ...(keepHumanType
-          ? {}
-          : {
-              documentType: classification.documentType,
-              classificationConfidence: classification.confidence,
-              classificationRationale: JSON.stringify(classification.rationale),
-            }),
-      })
-      .where(eq(schema.evidence.id, item.id));
+    // The evidence was deleted while we were extracting it; skip reporting.
+    if (!applied) continue;
 
     results.push({
       evidenceId: item.id,
       filename: item.filename,
       status: outcome.status,
-      passageCount: outcome.passages.length,
+      passageCount: applied.passageCount,
       pageCount: outcome.pageCount,
       limitation: outcome.limitation,
       error: outcome.error,
-      documentType: keepHumanType ? item.documentType : classification.documentType,
-      classificationConfidence: keepHumanType
-        ? item.classificationConfidence
-        : classification.confidence,
+      documentType: applied.classification ? applied.classification.documentType : item.documentType,
+      classificationConfidence: applied.classification
+        ? applied.classification.confidence
+        : item.classificationConfidence,
     });
   }
 
