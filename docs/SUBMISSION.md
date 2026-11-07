@@ -103,8 +103,8 @@ Verified as a freshly registered user against https://casefile-fhkr.vercel.app.
 | Search across documents by identifier | works — `RRF-55210` found in the bank statement |
 | Notes write and persist | works |
 | `hello` action from the UI and over HTTP | works — `{"message":"Hello, Judge!"}` |
-| The agent calls actions and writes the result back | works when the model is available (see 6) |
-| Contradiction detection on the payment demo | requires `analyze-evidence` (the model) |
+| The agent calls actions and writes the result back | works — `list-cases` returned the real seeded case; `hello` returned `Hello, Judge!` (see 6) |
+| Contradiction detection on the payment demo | works — `analyze-evidence` proposed 12 claims and 6 events; the UI showed 60 contradictions, including `RRF-55210` (see 7) |
 
 ## 5. Demo recording script (Clips)
 
@@ -136,34 +136,60 @@ it under 3 minutes. Six beats, in order:
 Before recording, confirm the model quota is available (section 6). If the agent
 beat cannot be shown, stop at beat 5 and say so — do not fake it.
 
-## 6. Blockers and honest limitations
+## 6. Agent model: recovered, and how to keep it working
 
-- **The agent's model is a Groq free-tier key with a 200,000 token/day cap.**
-  Verification runs on 2026-11-07 exhausted it; the agent then returns
-  `Rate limit reached for model openai/gpt-oss-120b ... tokens per day (TPD):
-  Limit 200000`. This is a quota limit, not a code defect: the same requests
-  succeed when quota is available (observed before exhaustion). **Before
-  recording or judging, the quota must be fresh.** The durable fixes are a
-  larger paid tier or a fallback provider — both are money, so neither is
-  applied under this milestone's "no paid services" constraint. Recommended:
-  reset the key, or point `AGENT_ENGINE`/`AGENT_MODEL` at a provider with
-  headroom.
-- **`analyze-evidence` (claims, events, and the payment demo's contradiction)
-  needs the model.** The deterministic beats — extraction, classification,
-  graph, domain labelling, gaps, readiness, report, export, search, notes — do
-  not. A judge with no model quota still sees a working product; only the
-  model-proposed findings are absent.
-- **The rate-limit error is shown verbatim to the user.** The chat renders the
-  provider's full 429 text. A friendlier in-app message ("the agent is out of
-  quota; the rest of the app still works") is a small UI improvement, not yet
-  made.
-- **Repository description and homepage are unset.** The GitHub App token in
-  this environment has no `administration` permission, so metadata cannot be
-  set programmatically. Set them in the GitHub web UI.
+The agent runs on a Groq free-tier key. On 2026-11-07 the original model,
+`openai/gpt-oss-120b`, exhausted its 200,000 tokens/day cap and every run
+failed. The key exposes **per-model quota pools**, so the fix is to pin a
+different model rather than to pay:
+
+- `AGENT_MODEL=openai/gpt-oss-20b` — the verified working value.
+
+Verified live after the switch (production, signed in, 2026-11-07):
+
+- `list-cases` — the agent called the action and returned the real case in the
+  workspace: `DEMO — court claim, Acme Ltd v Northwind Traders`.
+- `hello` — the agent called the action and returned `{"message":"Hello, Judge!"}`.
+- `analyze-evidence` — proposed 12 claims and 6 events; the case view then showed
+  60 contradictions, including the seeded `RRF-55210` refund contradiction.
+
+Two limits remain, and the demo script is written around them:
+
+- **`gpt-oss-20b` allows 8,000 tokens per minute.** One short agent turn fits;
+  several turns in the same minute will trip the limit. The demo asks the agent
+  one thing, once.
+- **The provider's raw 429 text is shown verbatim when a limit is hit.** The
+  framework classifies a failure as a rate limit only when the text contains
+  "too many requests" or the literal `429`; Groq's "Rate limit reached" does not
+  match, so the message reaches the user unsanitised. This is a framework gap,
+  not app code. The app-side fix would be a wrapper `fetch` on the engine that
+  maps a 429 body to the framework's own `http_429` code, but the plugin's
+  engine option is not reliably merged into the engine the chat actually uses,
+  so it is documented rather than shipped.
+
+If quota runs out again, pick another accessible model id, in the same way. The
+accessible ids on this key on 2026-11-07 were `openai/gpt-oss-20b` (working) and
+`openai/gpt-oss-120b` (access, quota exhausted); every other id tested returned
+"does not exist or you do not have access".
+
+## 7. What the model adds, and what stands without it
+
+The model-dependent beats — `analyze-evidence`, which proposes claims, events,
+parties, and the payment demo's contradiction — were verified working after the
+model switch (section 6). The deterministic beats do not need the model at all:
+extraction, format detection, classification, cross-document linking, gaps,
+readiness, report, export, search, and notes all run without a single model
+call. A judge with no model quota still sees a working product; only the
+model-proposed findings are absent.
+
+## 8. Other blockers and honest limitations
+
 - **A duplicate Vercel project `casefile` exists and is inert** (no domain,
   `live:false`, missing auth env vars). It double-builds only. Not deleted —
   deleting is destructive.
-- **Agent-reliability caveat.** Early in the session, before the quota was
-  exhausted, the agent answered and called tools successfully; once exhausted,
-  every run failed with the 429 above. Reliability should be re-measured on a
-  fresh quota before the demo.
+- **Repository description and homepage are unset.** The GitHub App token in
+  this environment has no `administration` permission, so metadata cannot be set
+  programmatically. Set them in the GitHub web UI.
+- **The agent's per-minute budget is the one live constraint.** On the working
+  model a single turn is reliable; the demo asks for one turn, once. See
+  section 6.
