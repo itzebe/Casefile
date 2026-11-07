@@ -144,33 +144,62 @@ Verified as a freshly registered user against https://casefile-fhkr.vercel.app.
 
 ## 5. Demo recording script (Clips)
 
-Record at https://clips.agent-native.com/ at 1440×900, on the live URL, signed
-in as a **fresh** account so the empty-workspace state is shown honestly. Keep
-it under 3 minutes. Six beats, in order:
+### Before you record (pre-flight)
+
+1. **Clips needs a signed-in account.** https://clips.agent-native.com/ is a
+   hosted app: "Sign in with Google", "Continue with email", or create an
+   account with a password (12-character minimum). It does **not** offer
+   local-dev sign-in from a cloud workspace, so this step is the submitter's to
+   do. Sign in first, then start the recording.
+2. **Set the window to 1440×900** and close other tabs.
+3. **Open the live app:** https://casefile-fhkr.vercel.app — do not use a
+   preview URL.
+4. **Use a fresh account.** Create a new account on the app so the
+   empty-workspace state is shown honestly.
+5. **Do not pre-load the demo.** Beats 2–3 are one click each; let them happen
+   on camera.
+6. **Keep it under 3 minutes.** Six beats, in order, below.
+
+Every button label below is the label the app actually renders.
+
+### Beats
 
 1. **Sign up** (0:00–0:15). Show the create-account form, then land on the
    empty workspace. Say: "a new account, nothing loaded."
-2. **Load the court case** (0:15–0:45). `/cases` → **Load the court demo**.
-   Show the six documents and that each is labelled with its own type. Say:
-   "one click, and the documents go through the same pipeline a real upload
-   takes."
+2. **Load the court case** (0:15–0:45). Go to `/cases`, click **Load the court
+   demo**. Show the six documents, each labelled with its own type. Say: "one
+   click, and the documents go through the same pipeline a real upload takes."
 3. **Connect the documents** (0:45–1:15). Click **Connect the documents**. Point
-   at the relationship count and the shared case number HC-2024-1234 that links
-   all six. Say: "links come from shared identifiers, never from shared words."
+   at the relationship count and the shared case number `HC-2024-1234` that
+   links all six. Say: "links come from shared identifiers, never from shared
+   words."
 4. **Field-specific analysis** (1:15–1:45). Scroll to **Field-specific
    analysis**. Point at `counsel-argument`, `party-allegation`, and
    `judicial-finding` on the judgment. Say: "the court's finding is labelled
    differently from the defendant's allegation — that distinction is the point."
 5. **A gap and its review** (1:45–2:15). Scroll to **What the record does not
-   yet establish**, open one gap, show **what would help**, then review it. Say:
-   "a gap is a first-class state; nothing is filled with a guess."
-6. **Export and the agent** (2:15–2:50). Export the report (PDF or Markdown).
-   Then open **Ask the agent about this case** and ask it to summarise the
-   conflicts, showing the agent working on the same record. Say: "the agent and
-   the interface read the same actions and the same data."
+   yet establish**, open one gap, show what would help, then review it. Say: "a
+   gap is a first-class state; nothing is filled with a guess."
+6. **Export, then one agent turn** (2:15–2:50). Export the report (**Export
+   Markdown** or **Export PDF**). Then click **Ask the agent about this case** —
+   it opens chat with a message already written — and **send it once**. The
+   agent reads the same case and answers on the same record. Say: "the agent and
+   the interface call the same actions on the same data."
 
-Before recording, confirm the model quota is available (section 6). If the agent
-beat cannot be shown, stop at beat 5 and say so — do not fake it.
+### The agent beat is one turn, once
+
+The working model (`openai/gpt-oss-20b`) allows **8,000 tokens per minute**
+(section 6). One short turn fits. Do not send a second message in the same
+minute.
+
+- **If the agent answers:** keep the answer on screen for a beat, then stop.
+- **If a raw `Rate limit reached …` message appears:** do **not** retry in a
+  loop — that is the provider limit, not a bug. Either wait a minute and send
+  **once** more, or fall back to the short verified prompt
+  **`List my cases, then stop.`** (this returned the seeded case live on
+  2026-11-07).
+- **If the agent beat cannot be shown at all:** stop at beat 5 and say so on
+  camera. Do not fake it.
 
 ## 6. Agent model: recovered, and how to keep it working
 
@@ -229,3 +258,21 @@ model-proposed findings are absent.
 - **The agent's per-minute budget is the one live constraint.** On the working
   model a single turn is reliable; the demo asks for one turn, once. See
   section 6.
+
+## 9. Remaining submission steps (checklist)
+
+The repository work is complete and deployed. What remains needs the
+submitter's account or a browser session:
+
+1. **Record the Clips demo** — sign in at https://clips.agent-native.com/,
+   record the six beats in section 5, get a **public** share URL.
+2. **Set repository metadata in the GitHub web UI** (the only repo-metadata
+   task that needs manual access — the API token has no `administration`
+   permission):
+   - **Description:** `Evidence workspace for a single dispute: every claim resolves to a document you can read. Agent-Native hackathon 2026.`
+   - **Homepage:** `https://casefile-fhkr.vercel.app`
+3. **Submit the form** at https://www.builder.io/hackathon/submit with the
+   values in section 1, the description from section 2 (including the
+   disclosure), the GitHub URL, and the public Clips URL.
+4. **Do not claim the entry is submitted until the form returns a
+   confirmation.** Recording and submitting are separate steps.
