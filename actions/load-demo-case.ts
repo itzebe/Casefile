@@ -5,6 +5,7 @@ import { z } from "zod";
 import { DEMO_CASE, DEMO_DOCUMENTS, type DemoDocument } from "../shared/casefile/demo-case.js";
 import { COURT_DEMO_CASE, COURT_DEMO_DOCUMENTS } from "../shared/casefile/court-demo-case.js";
 import { recordAudit } from "../server/casefile/access.js";
+import { agentDefault, agentOptional } from "../server/casefile/action-input.js";
 import { casefileContext } from "../server/casefile/context.js";
 import { storeEvidenceFile } from "../server/casefile/evidence-upload.js";
 import { extractCaseEvidence } from "../server/casefile/extraction-run.js";
@@ -29,18 +30,21 @@ export default defineAction({
   description:
     "Load a built-in synthetic demonstration case into this workspace: either the disputed-refund payment case, or the court case that separates a party allegation from a court finding. The documents are extracted, classified, and linked so the cross-document contradictions, agreements, and gaps can be reviewed. Safe to call more than once; returns the existing demo case if one is already present.",
   schema: z.object({
-    scenario: z
-      .enum(["payment", "court"])
-      .default("payment")
-      .describe(
-        "Which bundled demonstration to load: the disputed-refund payment case, or the court case that separates an allegation from a judgment.",
-      ),
-    title: z
-      .string()
-      .min(1)
-      .max(200)
-      .optional()
-      .describe("Override the demo case title. Rarely needed."),
+    scenario: agentDefault(
+      z
+        .enum(["payment", "court"])
+        .describe(
+          "Which bundled demonstration to load: the disputed-refund payment case, or the court case that separates an allegation from a judgment.",
+        ),
+      "payment",
+    ),
+    title: agentOptional(
+      z
+        .string()
+        .min(1)
+        .max(200)
+        .describe("Override the demo case title. Rarely needed."),
+    ),
   }),
   http: { method: "POST" },
   run: async (args, ctx) => {

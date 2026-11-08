@@ -3,6 +3,7 @@ import { asc, count, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { requireOwnedCase } from "../server/casefile/access.js";
+import { agentDefault } from "../server/casefile/action-input.js";
 import { isNullishText } from "../server/casefile/analysis.js";
 import { casefileContext } from "../server/casefile/context.js";
 import { getDb } from "../server/db/index.js";
@@ -22,14 +23,14 @@ export default defineAction({
     "Read one case with its evidence, findings, and citations. Use this to ground any statement about a case in the record: the result distinguishes documented facts from party assertions and agent inferences.",
   schema: z.object({
     caseId: z.string().min(1).describe("The case to read."),
-    includeEvidence: z
-      .boolean()
-      .default(true)
-      .describe("Include the evidence list and its extraction status."),
-    includeFindings: z
-      .boolean()
-      .default(true)
-      .describe("Include claims and events with their citations."),
+    includeEvidence: agentDefault(
+      z.boolean().describe("Include the evidence list and its extraction status."),
+      true,
+    ),
+    includeFindings: agentDefault(
+      z.boolean().describe("Include claims and events with their citations."),
+      true,
+    ),
   }),
   http: { method: "GET" },
   readOnly: true,

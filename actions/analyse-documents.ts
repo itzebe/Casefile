@@ -3,6 +3,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { requireOwnedCase } from "../server/casefile/access.js";
+import { agentOptional } from "../server/casefile/action-input.js";
 import { casefileContext } from "../server/casefile/context.js";
 import {
   DOMAINS,
@@ -27,10 +28,11 @@ export default defineAction({
     "Analyse a case's documents for their field-specific content: legal findings vs party allegations vs witness assertions, financial amounts by role (requested/invoiced/transferred/received/refunded/balance), contract obligations and terms, medical observations vs conclusions, and research claims vs methods vs results. For sentences no field-specific rule recognises, it falls back to the domain-neutral vocabulary (instructions, commitments, stated beliefs, open questions, dated records), so a document outside the five specialist fields still yields labels. Returns each labelled sentence with its source locator.",
   schema: z.object({
     caseId: z.string().min(1).describe("The case to analyse."),
-    domain: z
-      .enum(DOMAINS)
-      .optional()
-      .describe("Limit the result to one domain. Omit for every domain."),
+    domain: agentOptional(
+      z
+        .enum(DOMAINS)
+        .describe("Limit the result to one domain. Omit for every domain."),
+    ),
   }),
   http: { method: "GET" },
   readOnly: true,

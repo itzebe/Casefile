@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { requireOwnedCase } from "../server/casefile/access.js";
+import { agentDefault } from "../server/casefile/action-input.js";
 import { casefileContext } from "../server/casefile/context.js";
 import { getDb } from "../server/db/index.js";
 import * as schema from "../server/db/schema.js";
@@ -33,10 +34,10 @@ export default defineAction({
     "Build the chronological timeline for a case. Returns dated events in order, events with only coarse or conflicting dates flagged, and undated events in a separate list. Never invents a timestamp.",
   schema: z.object({
     caseId: z.string().min(1).describe("The case to build a timeline for."),
-    includeRejected: z
-      .boolean()
-      .default(false)
-      .describe("Include events a reviewer rejected."),
+    includeRejected: agentDefault(
+      z.boolean().describe("Include events a reviewer rejected."),
+      false,
+    ),
   }),
   http: { method: "GET" },
   readOnly: true,

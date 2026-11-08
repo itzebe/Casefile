@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { NOTE_STATUSES } from "../shared/casefile/types.js";
 import { recordAudit, requireOwnedCase } from "../server/casefile/access.js";
+import { agentClearable, agentOptional } from "../server/casefile/action-input.js";
 import { touchCase } from "../server/casefile/case-queries.js";
 import { casefileContext } from "../server/casefile/context.js";
 import { newNoteId } from "../server/casefile/ids.js";
@@ -25,19 +26,22 @@ export default defineAction({
     caseId: z.string().min(1).describe("The case the note belongs to."),
     noteId: z
       .string()
-      .optional()
+      .nullish()
       .describe("Edit this note. Omit to create a new one."),
     body: z
       .string()
       .min(1)
       .max(4000)
       .describe("The note text. Stored as written."),
-    findingId: z
-      .string()
-      .nullable()
-      .optional()
-      .describe("Optionally anchor the note to a finding in this case."),
-    status: z.enum(NOTE_STATUSES).optional().describe("open or resolved."),
+    findingId: agentClearable(
+      z
+        .string()
+        .nullable()
+        .describe("Optionally anchor the note to a finding in this case."),
+    ),
+    status: agentOptional(
+      z.enum(NOTE_STATUSES).describe("open or resolved."),
+    ),
   }),
   http: { method: "POST" },
   run: async (args, ctx) => {

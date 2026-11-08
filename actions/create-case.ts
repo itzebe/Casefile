@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { DISPUTE_CATEGORIES, CASE_STATUSES } from "../shared/casefile/types.js";
 import { recordAudit } from "../server/casefile/access.js";
+import { agentDefault, agentOptional } from "../server/casefile/action-input.js";
 import { casefileContext } from "../server/casefile/context.js";
 import { newCaseId } from "../server/casefile/ids.js";
 import { getDb } from "../server/db/index.js";
@@ -13,26 +14,32 @@ export default defineAction({
     "Open a new investigation case. Use this before uploading evidence: evidence and findings are always attached to a case. Returns the new case id.",
   schema: z.object({
     title: z.string().min(1).max(200).describe("Short name for the case."),
-    description: z
-      .string()
-      .max(5000)
-      .default("")
-      .describe("What is being investigated, in the user's own words."),
-    category: z
-      .enum(DISPUTE_CATEGORIES)
-      .default("uncategorized")
-      .describe("The kind of dispute under investigation."),
-    amountMinor: z
-      .number()
-      .int()
-      .nonnegative()
-      .optional()
-      .describe("Disputed amount in minor units (cents), if known."),
-    currency: z
-      .string()
-      .length(3)
-      .optional()
-      .describe("ISO 4217 currency code for amountMinor, e.g. USD."),
+    description: agentDefault(
+      z
+        .string()
+        .max(5000)
+        .describe("What is being investigated, in the user's own words."),
+      "",
+    ),
+    category: agentDefault(
+      z
+        .enum(DISPUTE_CATEGORIES)
+        .describe("The kind of dispute under investigation."),
+      "uncategorized",
+    ),
+    amountMinor: agentOptional(
+      z
+        .number()
+        .int()
+        .nonnegative()
+        .describe("Disputed amount in minor units (cents), if known."),
+    ),
+    currency: agentOptional(
+      z
+        .string()
+        .length(3)
+        .describe("ISO 4217 currency code for amountMinor, e.g. USD."),
+    ),
   }),
   http: { method: "POST" },
   run: async (args, ctx) => {

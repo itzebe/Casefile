@@ -3,6 +3,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { requireOwnedCase } from "../server/casefile/access.js";
+import { agentDefault } from "../server/casefile/action-input.js";
 import { casefileContext } from "../server/casefile/context.js";
 import { getDb } from "../server/db/index.js";
 import * as schema from "../server/db/schema.js";
@@ -20,14 +21,14 @@ export default defineAction({
     "List the events recorded for a case, with their date as written, resolved date, precision, conflict flag, and source passages. Events with no determinable date are included and marked unknown.",
   schema: z.object({
     caseId: z.string().min(1).describe("The case whose events to read."),
-    conflictsOnly: z
-      .boolean()
-      .default(false)
-      .describe("Return only events whose sources give conflicting dates."),
-    undatedOnly: z
-      .boolean()
-      .default(false)
-      .describe("Return only events with no determinable date."),
+    conflictsOnly: agentDefault(
+      z.boolean().describe("Return only events whose sources give conflicting dates."),
+      false,
+    ),
+    undatedOnly: agentDefault(
+      z.boolean().describe("Return only events with no determinable date."),
+      false,
+    ),
   }),
   http: { method: "GET" },
   readOnly: true,

@@ -9,6 +9,7 @@ import {
   REVIEW_STATUSES,
 } from "../shared/casefile/types.js";
 import { recordAudit, requireOwnedCase } from "../server/casefile/access.js";
+import { agentOptional } from "../server/casefile/action-input.js";
 import { casefileContext } from "../server/casefile/context.js";
 import { touchCase } from "../server/casefile/case-queries.js";
 import { newRelationshipId } from "../server/casefile/ids.js";
@@ -34,26 +35,27 @@ export default defineAction({
   schema: z
     .object({
       caseId: z.string().min(1).describe("The case the relationship belongs to."),
-      relationshipId: z
-        .string()
-        .optional()
-        .describe("An existing relationship to confirm or reject."),
-      fromType: z.enum(RELATIONSHIP_NODE_TYPES).optional(),
-      fromId: z.string().optional(),
-      toType: z.enum(RELATIONSHIP_NODE_TYPES).optional(),
-      toId: z.string().optional(),
-      relationType: z.enum(RELATIONSHIP_TYPES).optional(),
-      basis: z.enum(RELATIONSHIP_BASIS).optional(),
-      matchKey: z
-        .string()
-        .max(200)
-        .optional()
-        .describe("The identifier, amount, date, or name the two nodes share."),
-      rationale: z.string().max(500).optional(),
-      reviewStatus: z
-        .enum(REVIEW_STATUSES)
-        .optional()
-        .describe("confirmed accepts the relationship; rejected dismisses it."),
+      relationshipId: agentOptional(
+        z.string().describe("An existing relationship to confirm or reject."),
+      ),
+      fromType: agentOptional(z.enum(RELATIONSHIP_NODE_TYPES)),
+      fromId: agentOptional(z.string()),
+      toType: agentOptional(z.enum(RELATIONSHIP_NODE_TYPES)),
+      toId: agentOptional(z.string()),
+      relationType: agentOptional(z.enum(RELATIONSHIP_TYPES)),
+      basis: agentOptional(z.enum(RELATIONSHIP_BASIS)),
+      matchKey: agentOptional(
+        z
+          .string()
+          .max(200)
+          .describe("The identifier, amount, date, or name the two nodes share."),
+      ),
+      rationale: agentOptional(z.string().max(500)),
+      reviewStatus: agentOptional(
+        z
+          .enum(REVIEW_STATUSES)
+          .describe("confirmed accepts the relationship; rejected dismisses it."),
+      ),
     })
     .refine(
       (value) => Boolean(value.relationshipId) || Boolean(value.fromId && value.toId && value.relationType),

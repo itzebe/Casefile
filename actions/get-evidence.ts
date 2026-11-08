@@ -3,6 +3,7 @@ import { asc, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { requireOwnedCase, requireOwnedEvidence } from "../server/casefile/access.js";
+import { agentDefault } from "../server/casefile/action-input.js";
 import { casefileContext } from "../server/casefile/context.js";
 import { evidenceStoreById } from "../server/casefile/evidence-store.js";
 import { getDb } from "../server/db/index.js";
@@ -22,14 +23,14 @@ export default defineAction({
   schema: z.object({
     caseId: z.string().min(1).describe("The case the evidence belongs to."),
     evidenceId: z.string().min(1).describe("The evidence to read."),
-    includeBytes: z
-      .boolean()
-      .default(false)
-      .describe("Include base64 bytes of the original file for preview."),
-    includePassages: z
-      .boolean()
-      .default(true)
-      .describe("Include the extracted text passages with their locators."),
+    includeBytes: agentDefault(
+      z.boolean().describe("Include base64 bytes of the original file for preview."),
+      false,
+    ),
+    includePassages: agentDefault(
+      z.boolean().describe("Include the extracted text passages with their locators."),
+      true,
+    ),
   }),
   http: { method: "POST" },
   readOnly: true,
