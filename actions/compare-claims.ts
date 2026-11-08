@@ -2,6 +2,7 @@ import { defineAction } from "@agent-native/core/action";
 import { z } from "zod";
 
 import { requireOwnedCase } from "../server/casefile/access.js";
+import { agentOptional } from "../server/casefile/action-input.js";
 import { casefileContext } from "../server/casefile/context.js";
 import { buildCaseGraph } from "../server/casefile/graph.js";
 
@@ -21,20 +22,20 @@ export default defineAction({
     "Compare claims and events across a case's documents. Returns each pair that is about the same subject with a verdict: direct agreement, partial agreement, contradiction, potential contradiction, or insufficient information. Every comparison keeps both assertions and their exact source passages. Filter to one finding with findingId.",
   schema: z.object({
     caseId: z.string().min(1).describe("The case to compare."),
-    findingId: z
-      .string()
-      .optional()
-      .describe("Only return comparisons that involve this finding."),
-    verdict: z
-      .enum([
-        "direct_agreement",
-        "partial_agreement",
-        "contradiction",
-        "potential_contradiction",
-        "insufficient_information",
-      ])
-      .optional()
-      .describe("Only return comparisons with this verdict."),
+    findingId: agentOptional(
+      z.string().describe("Only return comparisons that involve this finding."),
+    ),
+    verdict: agentOptional(
+      z
+        .enum([
+          "direct_agreement",
+          "partial_agreement",
+          "contradiction",
+          "potential_contradiction",
+          "insufficient_information",
+        ])
+        .describe("Only return comparisons with this verdict."),
+    ),
   }),
   http: { method: "GET" },
   readOnly: true,

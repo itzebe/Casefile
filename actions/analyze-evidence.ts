@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { recordAudit, requireOwnedCase } from "../server/casefile/access.js";
+import { agentDefault } from "../server/casefile/action-input.js";
 import { casefileContext } from "../server/casefile/context.js";
 import { touchCase } from "../server/casefile/case-queries.js";
 import { getDb } from "../server/db/index.js";
@@ -30,10 +31,12 @@ export default defineAction({
     "Analyse a case's extracted evidence and propose claims, events, and parties. Every proposal carries its source passages, and is written as a proposal - never as a confirmed fact. Re-running keeps any finding a human has already reviewed.",
   schema: z.object({
     caseId: z.string().min(1).describe("The case to analyse."),
-    replaceUnreviewed: z
-      .boolean()
-      .default(true)
-      .describe("Replace previous proposals that no human has reviewed yet."),
+    replaceUnreviewed: agentDefault(
+      z
+        .boolean()
+        .describe("Replace previous proposals that no human has reviewed yet."),
+      true,
+    ),
   }),
   http: { method: "POST" },
   needsApproval: false,

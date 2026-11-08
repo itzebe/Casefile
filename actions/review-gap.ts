@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { GAP_REVIEW_STATUSES } from "../shared/casefile/types.js";
 import { recordAudit, requireOwnedCase } from "../server/casefile/access.js";
+import { agentClearable } from "../server/casefile/action-input.js";
 import { casefileContext } from "../server/casefile/context.js";
 import { buildCaseGraph } from "../server/casefile/graph.js";
 import { newGapReviewId } from "../server/casefile/ids.js";
@@ -32,12 +33,9 @@ export default defineAction({
       .max(300)
       .describe("The stable key of the gap, as returned by list-evidence-gaps."),
     status: z.enum(GAP_REVIEW_STATUSES).describe("The reviewer's verdict."),
-    note: z
-      .string()
-      .max(2000)
-      .nullable()
-      .optional()
-      .describe("Optional short reason for the verdict."),
+    note: agentClearable(
+      z.string().max(2000).nullable().describe("Optional short reason for the verdict."),
+    ),
   }),
   http: { method: "POST" },
   run: async (args, ctx) => {

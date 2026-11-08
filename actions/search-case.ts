@@ -2,8 +2,9 @@ import { defineAction } from "@agent-native/core/action";
 import { and, asc, desc, eq, ilike, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { casefileContext } from "../server/casefile/context.js";
 import { requireOwnedCase } from "../server/casefile/access.js";
+import { agentDefault, agentOptional } from "../server/casefile/action-input.js";
+import { casefileContext } from "../server/casefile/context.js";
 import { getDb } from "../server/db/index.js";
 import * as schema from "../server/db/schema.js";
 
@@ -29,21 +30,23 @@ export default defineAction({
     "Search a user's own cases and their contents for a term: case titles, document filenames, passage text, finding statements and investigator notes. Optionally narrow to one case. Returns each hit with the id needed to open its source. Scoped to the caller's cases at the SQL level; never returns another user's data.",
   schema: z.object({
     query: z.string().min(1).max(200).describe("The term to search for."),
-    caseId: z
-      .string()
-      .optional()
-      .describe("Narrow the search to one case the caller owns."),
-    kinds: z
-      .array(z.enum(SEARCH_KINDS))
-      .optional()
-      .describe("Limit to some result kinds. Omit to search all."),
-    limit: z
-      .number()
-      .int()
-      .min(1)
-      .max(100)
-      .default(40)
-      .describe("Maximum hits per kind."),
+    caseId: agentOptional(
+      z.string().describe("Narrow the search to one case the caller owns."),
+    ),
+    kinds: agentOptional(
+      z
+        .array(z.enum(SEARCH_KINDS))
+        .describe("Limit to some result kinds. Omit to search all."),
+    ),
+    limit: agentDefault(
+      z
+        .number()
+        .int()
+        .min(1)
+        .max(100)
+        .describe("Maximum hits per kind."),
+      40,
+    ),
   }),
   http: { method: "GET" },
   readOnly: true,

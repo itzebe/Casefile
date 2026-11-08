@@ -9,6 +9,7 @@ import {
   MAX_EVIDENCE_PER_CASE,
 } from "../shared/casefile/types.js";
 import { recordAudit, requireOwnedCase } from "../server/casefile/access.js";
+import { agentDefault, agentOptional } from "../server/casefile/action-input.js";
 import { casefileContext } from "../server/casefile/context.js";
 import { storeEvidenceFile } from "../server/casefile/evidence-upload.js";
 import { getDb } from "../server/db/index.js";
@@ -38,15 +39,18 @@ export default defineAction({
       .min(1)
       .max(MAX_BASE64_BYTES)
       .describe("Base64-encoded file contents."),
-    mimeType: z
-      .string()
-      .max(120)
-      .optional()
-      .describe("Client-declared MIME type. Only used to explain a rejection; the type is detected from the file's bytes."),
-    category: z
-      .enum(EVIDENCE_CATEGORIES)
-      .default("uncategorized")
-      .describe("What kind of document this is in the case."),
+    mimeType: agentOptional(
+      z
+        .string()
+        .max(120)
+        .describe("Client-declared MIME type. Only used to explain a rejection; the type is detected from the file's bytes."),
+    ),
+    category: agentDefault(
+      z
+        .enum(EVIDENCE_CATEGORIES)
+        .describe("What kind of document this is in the case."),
+      "uncategorized",
+    ),
   }),
   http: { method: "POST" },
   maxBodyBytes: MAX_BASE64_BYTES + 64 * 1024,

@@ -2,6 +2,7 @@ import { defineAction } from "@agent-native/core/action";
 import { z } from "zod";
 
 import { recordAudit, requireOwnedCase } from "../server/casefile/access.js";
+import { agentDefault, agentOptional } from "../server/casefile/action-input.js";
 import { casefileContext } from "../server/casefile/context.js";
 import { extractCaseEvidence } from "../server/casefile/extraction-run.js";
 
@@ -20,14 +21,13 @@ export default defineAction({
     "Extract text from a case's evidence so it can be analysed and cited. Pass an evidenceId to extract one file, or omit it to extract every pending file in the case. Records page and row references for each passage.",
   schema: z.object({
     caseId: z.string().min(1).describe("The case whose evidence to extract."),
-    evidenceId: z
-      .string()
-      .optional()
-      .describe("Extract only this file. Omit to extract every file in the case."),
-    force: z
-      .boolean()
-      .default(false)
-      .describe("Re-extract files that already have passages."),
+    evidenceId: agentOptional(
+      z.string().describe("Extract only this file. Omit to extract every file in the case."),
+    ),
+    force: agentDefault(
+      z.boolean().describe("Re-extract files that already have passages."),
+      false,
+    ),
   }),
   http: { method: "POST" },
   run: async (args, ctx) => {

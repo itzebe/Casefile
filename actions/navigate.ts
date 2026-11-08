@@ -2,13 +2,15 @@ import { defineAction } from "@agent-native/core/action";
 import { writeAppStateForCurrentTab } from "@agent-native/core/application-state";
 import { z } from "zod";
 
+import { agentOptional } from "../server/casefile/action-input.js";
+
 export default defineAction({
   description:
     "Navigate the UI to a specific view or path. Writes a navigate command to application state which the UI reads and auto-deletes.",
   schema: z.object({
-    view: z.string().optional().describe("View name to navigate to"),
-    path: z.string().optional().describe("URL path to navigate to"),
-    threadId: z.string().optional().describe("Chat thread ID to open"),
+    view: agentOptional(z.string().describe("View name to navigate to")),
+    path: agentOptional(z.string().describe("URL path to navigate to")),
+    threadId: agentOptional(z.string().describe("Chat thread ID to open")),
   }),
   http: false,
   run: async (args) => {

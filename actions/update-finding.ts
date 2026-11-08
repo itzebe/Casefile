@@ -9,6 +9,7 @@ import {
   REVIEW_STATUSES,
 } from "../shared/casefile/types.js";
 import { recordAudit, requireOwnedCase } from "../server/casefile/access.js";
+import { agentClearable, agentOptional } from "../server/casefile/action-input.js";
 import { casefileContext } from "../server/casefile/context.js";
 import { touchCase } from "../server/casefile/case-queries.js";
 import { getDb } from "../server/db/index.js";
@@ -33,33 +34,39 @@ export default defineAction({
     .object({
       caseId: z.string().min(1).describe("The case the finding belongs to."),
       findingId: z.string().min(1).describe("The finding to update."),
-      statement: z
-        .string()
-        .min(1)
-        .max(2000)
-        .optional()
-        .describe("Corrected wording of the claim or event."),
-      reviewStatus: z
-        .enum(REVIEW_STATUSES)
-        .optional()
-        .describe("confirmed accepts the finding; rejected records that it was not accepted."),
-      provenance: z.enum(PROVENANCE).optional().describe("Corrected provenance."),
-      eventDate: z
-        .string()
-        .regex(/^\d{4}-\d{2}(-\d{2})?$/)
-        .nullable()
-        .optional()
-        .describe("Corrected date as YYYY-MM-DD or YYYY-MM. Send null to clear a wrong date."),
-      eventDateText: z
-        .string()
-        .max(120)
-        .nullable()
-        .optional()
-        .describe("The date exactly as the source wrote it."),
-      datePrecision: z.enum(DATE_PRECISION).optional(),
-      dateConflict: z.boolean().optional(),
-      confidence: z.enum(CONFIDENCE_LEVELS).nullable().optional(),
-      uncertainty: z.string().max(1000).nullable().optional(),
+      statement: agentOptional(
+        z
+          .string()
+          .min(1)
+          .max(2000)
+          .describe("Corrected wording of the claim or event."),
+      ),
+      reviewStatus: agentOptional(
+        z
+          .enum(REVIEW_STATUSES)
+          .describe("confirmed accepts the finding; rejected records that it was not accepted."),
+      ),
+      provenance: agentOptional(
+        z.enum(PROVENANCE).describe("Corrected provenance."),
+      ),
+      eventDate: agentClearable(
+        z
+          .string()
+          .regex(/^\d{4}-\d{2}(-\d{2})?$/)
+          .nullable()
+          .describe("Corrected date as YYYY-MM-DD or YYYY-MM. Send null to clear a wrong date."),
+      ),
+      eventDateText: agentClearable(
+        z
+          .string()
+          .max(120)
+          .nullable()
+          .describe("The date exactly as the source wrote it."),
+      ),
+      datePrecision: agentOptional(z.enum(DATE_PRECISION)),
+      dateConflict: agentOptional(z.boolean()),
+      confidence: agentClearable(z.enum(CONFIDENCE_LEVELS).nullable()),
+      uncertainty: agentClearable(z.string().max(1000).nullable()),
     })
     .refine(
       (value) =>

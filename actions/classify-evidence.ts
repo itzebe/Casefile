@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { DOCUMENT_TYPES } from "../shared/casefile/types.js";
 import { recordAudit, requireOwnedCase, requireOwnedEvidence } from "../server/casefile/access.js";
+import { agentOptional } from "../server/casefile/action-input.js";
 import { casefileContext } from "../server/casefile/context.js";
 import { classifyDocument } from "../server/casefile/classification.js";
 import { touchCase } from "../server/casefile/case-queries.js";
@@ -27,10 +28,11 @@ export default defineAction({
   schema: z.object({
     caseId: z.string().min(1).describe("The case the evidence belongs to."),
     evidenceId: z.string().min(1).describe("The evidence to classify."),
-    documentType: z
-      .enum(DOCUMENT_TYPES)
-      .optional()
-      .describe("The type to set. Omit to re-run automatic classification."),
+    documentType: agentOptional(
+      z
+        .enum(DOCUMENT_TYPES)
+        .describe("The type to set. Omit to re-run automatic classification."),
+    ),
   }),
   http: { method: "POST" },
   run: async (args, ctx) => {

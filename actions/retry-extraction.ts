@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { recordAudit, requireOwnedCase } from "../server/casefile/access.js";
+import { agentOptional } from "../server/casefile/action-input.js";
 import { casefileContext } from "../server/casefile/context.js";
 import { extractCaseEvidence } from "../server/casefile/extraction-run.js";
 import { getDb } from "../server/db/index.js";
@@ -23,10 +24,9 @@ export default defineAction({
     "Retry text extraction for the files in a case that failed or are still pending. Leaves successfully extracted files alone. Re-runs the same extraction pass as extract-evidence and reports each file's new status.",
   schema: z.object({
     caseId: z.string().min(1).describe("The case whose failed files to retry."),
-    evidenceId: z
-      .string()
-      .optional()
-      .describe("Retry only this file. Omit to retry every failed or pending file."),
+    evidenceId: agentOptional(
+      z.string().describe("Retry only this file. Omit to retry every failed or pending file."),
+    ),
   }),
   http: { method: "POST" },
   run: async (args, ctx) => {

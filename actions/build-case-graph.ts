@@ -2,6 +2,7 @@ import { defineAction } from "@agent-native/core/action";
 import { z } from "zod";
 
 import { recordAudit, requireOwnedCase } from "../server/casefile/access.js";
+import { agentDefault } from "../server/casefile/action-input.js";
 import { casefileContext } from "../server/casefile/context.js";
 import { touchCase } from "../server/casefile/case-queries.js";
 import { buildCaseGraph } from "../server/casefile/graph.js";
@@ -22,10 +23,12 @@ export default defineAction({
     "Build the cross-document evidence graph for a case: relationships between documents, cross-document claim comparisons (agreement, contradiction, or unresolved), and evidence gaps. Every relationship records what it matched on and the passage it came from. Results are proposals until a person reviews them.",
   schema: z.object({
     caseId: z.string().min(1).describe("The case to build a graph for."),
-    persist: z
-      .boolean()
-      .default(true)
-      .describe("Store the derived relationships. Set false to compute without writing."),
+    persist: agentDefault(
+      z
+        .boolean()
+        .describe("Store the derived relationships. Set false to compute without writing."),
+      true,
+    ),
   }),
   http: { method: "POST" },
   run: async (args, ctx) => {

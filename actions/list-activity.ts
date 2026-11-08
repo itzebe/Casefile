@@ -3,6 +3,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { requireOwnedCase } from "../server/casefile/access.js";
+import { agentDefault } from "../server/casefile/action-input.js";
 import { casefileContext } from "../server/casefile/context.js";
 import { getDb } from "../server/db/index.js";
 import * as schema from "../server/db/schema.js";
@@ -21,13 +22,15 @@ export default defineAction({
     "Read a case's activity history: the audit trail of writes that touched the case (uploads, extraction, analysis, reviews, exports), newest first, with the actor and whether it came from the UI or the agent. Read-only.",
   schema: z.object({
     caseId: z.string().min(1).describe("The case whose activity to read."),
-    limit: z
-      .number()
-      .int()
-      .min(1)
-      .max(200)
-      .default(50)
-      .describe("How many of the most recent entries to return."),
+    limit: agentDefault(
+      z
+        .number()
+        .int()
+        .min(1)
+        .max(200)
+        .describe("How many of the most recent entries to return."),
+      50,
+    ),
   }),
   http: { method: "GET" },
   readOnly: true,

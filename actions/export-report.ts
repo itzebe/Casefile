@@ -2,6 +2,7 @@ import { defineAction } from "@agent-native/core/action";
 import { z } from "zod";
 
 import { recordAudit, requireOwnedCase } from "../server/casefile/access.js";
+import { agentDefault } from "../server/casefile/action-input.js";
 import { casefileContext } from "../server/casefile/context.js";
 import { buildReport, renderReportCsv, renderReportHtml, renderReportJson, renderReportMarkdown } from "../server/casefile/report.js";
 import { renderReportDocx } from "../server/casefile/report-docx.js";
@@ -24,10 +25,12 @@ export default defineAction({
     "Export the investigation report as markdown, HTML, DOCX, PDF, JSON, or CSV. The export preserves citations and marks proposed statements as proposed. JSON is the full report object; CSV is one row per statement with a citation row per source. Returns base64-encoded file content; no public URL is created.",
   schema: z.object({
     caseId: z.string().min(1).describe("The case to export a report for."),
-    format: z
-      .enum(["markdown", "html", "docx", "pdf", "json", "csv"])
-      .default("markdown")
-      .describe("The export format."),
+    format: agentDefault(
+      z
+        .enum(["markdown", "html", "docx", "pdf", "json", "csv"])
+        .describe("The export format."),
+      "markdown",
+    ),
   }),
   http: { method: "POST" },
   readOnly: true,

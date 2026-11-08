@@ -3,6 +3,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { requireOwnedCase } from "../server/casefile/access.js";
+import { agentOptional } from "../server/casefile/action-input.js";
 import { casefileContext } from "../server/casefile/context.js";
 import { getDb } from "../server/db/index.js";
 import * as schema from "../server/db/schema.js";
@@ -20,14 +21,16 @@ export default defineAction({
     "List the claims recorded for a case, with provenance (documented, asserted, inferred, unverified), review status, and the source passages for each. Reads stored results; run analyzeEvidence to produce them.",
   schema: z.object({
     caseId: z.string().min(1).describe("The case whose claims to read."),
-    provenance: z
-      .enum(["documented", "asserted", "inferred", "unverified"])
-      .optional()
-      .describe("Filter to one provenance kind."),
-    reviewStatus: z
-      .enum(["proposed", "confirmed", "rejected"])
-      .optional()
-      .describe("Filter to one review status."),
+    provenance: agentOptional(
+      z
+        .enum(["documented", "asserted", "inferred", "unverified"])
+        .describe("Filter to one provenance kind."),
+    ),
+    reviewStatus: agentOptional(
+      z
+        .enum(["proposed", "confirmed", "rejected"])
+        .describe("Filter to one review status."),
+    ),
   }),
   http: { method: "GET" },
   readOnly: true,

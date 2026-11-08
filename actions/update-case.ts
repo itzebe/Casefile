@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { CASE_STATUSES, DISPUTE_CATEGORIES } from "../shared/casefile/types.js";
 import { recordAudit, requireOwnedCase } from "../server/casefile/access.js";
+import { agentClearable, agentOptional } from "../server/casefile/action-input.js";
 import { casefileContext } from "../server/casefile/context.js";
 import { touchCase } from "../server/casefile/case-queries.js";
 import { getDb } from "../server/db/index.js";
@@ -15,12 +16,12 @@ export default defineAction({
   schema: z
     .object({
       caseId: z.string().min(1).describe("The case to update."),
-      title: z.string().min(1).max(200).optional(),
-      description: z.string().max(5000).optional(),
-      category: z.enum(DISPUTE_CATEGORIES).optional(),
-      status: z.enum(CASE_STATUSES).optional(),
-      amountMinor: z.number().int().nonnegative().nullable().optional(),
-      currency: z.string().length(3).nullable().optional(),
+      title: agentOptional(z.string().min(1).max(200)),
+      description: agentOptional(z.string().max(5000)),
+      category: agentOptional(z.enum(DISPUTE_CATEGORIES)),
+      status: agentOptional(z.enum(CASE_STATUSES)),
+      amountMinor: agentClearable(z.number().int().nonnegative().nullable()),
+      currency: agentClearable(z.string().length(3).nullable()),
     })
     .refine(
       (value) =>
