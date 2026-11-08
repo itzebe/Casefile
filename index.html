@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CASEFILE — demo video</title>
+<meta name="description" content="CASEFILE demo video — an agent-native evidence workspace that reads a dispute's documents and shows what the record establishes, what conflicts, and what is still unknown." />
+<style>
+  :root {
+    --bg:#0b0c0e; --panel:#14161a; --line:#262a31; --ink:#e9ebef;
+    --muted:#9aa2ad; --accent:#c8a05a;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; }
+  body {
+    background:var(--bg); color:var(--ink); min-height:100vh;
+    font:16px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    display:flex; flex-direction:column; align-items:center;
+    padding:clamp(20px,5vw,64px) 20px;
+  }
+  header { width:100%; max-width:1000px; display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; }
+  h1 { margin:0; font-size:clamp(20px,3.2vw,28px); letter-spacing:.14em; font-weight:600; text-transform:uppercase; }
+  .kicker { color:var(--accent); font-size:12px; letter-spacing:.22em; text-transform:uppercase; }
+  .tag { color:var(--muted); font-size:14px; margin:10px 0 22px; max-width:70ch; }
+  .frame {
+    width:100%; max-width:1000px; background:var(--panel); border:1px solid var(--line);
+    border-radius:10px; overflow:hidden;
+  }
+  video { display:block; width:100%; height:auto; background:#000; }
+  .meta { width:100%; max-width:1000px; margin:16px 0 0; display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .meta span { color:var(--muted); font-size:13px; }
+  .links { margin-left:auto; display:flex; gap:8px; flex-wrap:wrap; }
+  a.btn {
+    display:inline-flex; align-items:center; gap:8px; padding:9px 14px; min-height:38px;
+    border:1px solid var(--line); border-radius:8px; color:var(--ink); text-decoration:none;
+    font-size:14px; background:#181b20; transition:background .15s ease,border-color .15s ease;
+  }
+  a.btn:hover { background:#1e2229; border-color:#3a4048; }
+  a.btn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  a.btn.primary { background:var(--accent); color:#141414; border-color:var(--accent); font-weight:600; }
+  a.btn.primary:hover { background:#d6b06a; }
+  footer { width:100%; max-width:1000px; margin-top:26px; color:var(--muted); font-size:13px; border-top:1px solid var(--line); padding-top:16px; }
+  a.text { color:var(--ink); }
+  @media (prefers-reduced-motion: reduce) { a.btn { transition:none; } }
+</style>
+</head>
+<body>
+  <header>
+    <span class="kicker">Demo</span>
+    <h1>Casefile</h1>
+  </header>
+  <p class="tag">An agent-native evidence workspace for a dispute: it reads the documents in one
+  case, links them by the identifiers they share, and shows what the record establishes, what
+  conflicts, and what is still unknown — with every claim resolvable to the evidence behind it.</p>
+
+  <div class="frame">
+    <video id="v" controls preload="metadata" playsinline poster="poster.jpg"
+           src="https://github.com/itzebe/Casefile/releases/latest/download/CASEFILE-demo.mp4">
+      Your browser cannot play this video.
+      <a href="https://github.com/itzebe/Casefile/releases/latest/download/CASEFILE-demo.mp4">Download it instead.</a>
+    </video>
+  </div>
+
+  <div class="meta">
+    <span>1920×1080 · 2:51 · H.264 / AAC</span>
+    <div class="links">
+      <a class="btn primary" href="https://github.com/itzebe/Casefile/releases/latest/download/CASEFILE-demo.mp4">Download MP4</a>
+      <a class="btn" href="https://github.com/itzebe/Casefile/releases/latest/download/subtitles.srt">Subtitles</a>
+      <a class="btn" href="https://github.com/itzebe/Casefile">Repository</a>
+    </div>
+  </div>
+
+  <footer>
+    Independent demo for the Builder.io Agent-Native Hackathon 2026. Synthetic data; no real
+    party, contract, or proceeding is represented.
+  </footer>
+</body>
+</html>
