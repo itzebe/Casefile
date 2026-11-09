@@ -29,9 +29,10 @@ sign-in therefore works with no extra configuration.
 | Typecheck | `pnpm typecheck` | pass |
 | Unit/integration (PGlite) | `pnpm test` | 416 passed / 24 files |
 | Netlify build | `NITRO_PRESET=netlify pnpm build` | pass — 3 functions + `dist/` (457 files) |
+| PostgreSQL integration | `CASEFILE_TEST_PG_URL=… pnpm test:pg` | 13 passed / 2 files |
 
-Not run here: `pnpm test:pg` (needs a Postgres server) and `pnpm test:e2e`
-(needs a browser + dev server). Both run in the repository's own CI.
+Not run here: `pnpm test:e2e` (needs a browser + dev server). It runs in the
+repository's own CI.
 
 ## Required environment variables (names only; never commit values)
 
